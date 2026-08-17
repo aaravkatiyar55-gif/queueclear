@@ -12,6 +12,7 @@ let currentEnergy = readCurrentEnergy();
 let focusTimer = null;
 let focusSeconds = 600;
 let focusTaskId = null;
+const statusTimers = {};
 
 const el = (id) => document.getElementById(id);
 
@@ -116,40 +117,66 @@ function compareByEstimateThenQueueOrder(first, second) {
   return first.createdAt - second.createdAt;
 }
 
-function getSuggestedTask() {
+function getSuggestion() {
   const available = getAvailableTasks();
   const matchesEnergy = available.filter((task) => task.energy === currentEnergy);
   const candidates = matchesEnergy.length > 0 ? matchesEnergy : available;
 
-  if (candidates.length === 0) {
-    return null;
-  }
-
-  return candidates.slice().sort(compareByEstimateThenQueueOrder)[0];
+  return {
+    task: candidates.slice().sort(compareByEstimateThenQueueOrder)[0] || null,
+    available,
+    candidates,
+    energyFilteredChoices: matchesEnergy.length > 0 && matchesEnergy.length < available.length,
+    usedEnergyFallback: matchesEnergy.length === 0 && available.length > 0,
+  };
 }
 
-function getSuggestionReason(task) {
-  const matchesEnergy = task.energy === currentEnergy;
+function getSuggestedTask() {
+  return getSuggestion().task;
+}
 
-  if (matchesEnergy && task.estimatedMinutes) {
-    return (
-      'Picked because it matches your ' +
-      currentEnergy +
-      '-energy setting and should take about ' +
-      task.estimatedMinutes +
-      ' minutes.'
+function getTieBreakReason(task, candidates) {
+  if (candidates.length === 1) {
+    return 'It is the only task ready right now.';
+  }
+
+  if (task.estimatedMinutes !== null) {
+    const sameEstimate = candidates.filter(
+      (candidate) => candidate.estimatedMinutes === task.estimatedMinutes,
     );
+    const hasLongerEstimate = candidates.some(
+      (candidate) =>
+        candidate.estimatedMinutes === null || candidate.estimatedMinutes > task.estimatedMinutes,
+    );
+
+    if (hasLongerEstimate && sameEstimate.length === 1) {
+      return 'It has the shortest available estimate.';
+    }
+
+    if (hasLongerEstimate) {
+      return 'It is tied for the shortest estimate and was added first.';
+    }
   }
 
-  if (matchesEnergy) {
-    return 'Picked because it matches your ' + currentEnergy + '-energy setting.';
+  return 'It was added first among tasks with the same available details.';
+}
+
+function getSuggestionReason(suggestion) {
+  const { task, candidates, energyFilteredChoices, usedEnergyFallback } = suggestion;
+  const tieBreakReason =
+    energyFilteredChoices && candidates.length === 1
+      ? 'It is the only task that matches this energy.'
+      : getTieBreakReason(task, candidates);
+
+  if (energyFilteredChoices) {
+    return 'It matches your ' + currentEnergy + '-energy setting. ' + tieBreakReason;
   }
 
-  if (task.estimatedMinutes) {
-    return 'Picked because it is one of the shortest tasks available right now.';
+  if (usedEnergyFallback) {
+    return 'No task matches your ' + currentEnergy + '-energy setting. ' + tieBreakReason;
   }
 
-  return 'Picked because it is the first available task in your queue.';
+  return tieBreakReason;
 }
 
 function formatEnergy(energy) {
@@ -192,12 +219,20 @@ function formatSnoozeTime(timestamp) {
   }).format(new Date(timestamp));
 }
 
+function showStatus(id, message) {
+  el(id).textContent = message;
+  clearTimeout(statusTimers[id]);
+  statusTimers[id] = setTimeout(() => {
+    el(id).textContent = '';
+  }, 6000);
+}
+
 function showFormStatus(message) {
-  el('form-message').textContent = message;
+  showStatus('form-message', message);
 }
 
 function showNextStatus(message) {
-  el('next-message').textContent = message;
+  showStatus('next-message', message);
 }
 
 function clearCaptureContext() {
@@ -206,15 +241,18 @@ function clearCaptureContext() {
 }
 
 function renderSuggestion() {
-  const suggestion = getSuggestedTask();
+  const recommendation = getSuggestion();
+  const suggestion = recommendation.task;
   const hasActiveTasks = getActiveTasks().length > 0;
 
   el('current-energy-input').value = currentEnergy;
+  el('current-energy-help').textContent =
+    'QueueClear looks for ' + currentEnergy + '-energy tasks first.';
 
   if (!suggestion) {
     el('next-task').textContent = hasActiveTasks
-      ? 'Nothing is ready right now. Wake a snoozed task when you are ready.'
-      : 'Add a task when something comes up.';
+      ? 'Everything active is snoozed. Wake a task below if your plans changed; otherwise it returns tomorrow.'
+      : 'Your queue is clear. Add one small task above.';
     el('next-details').hidden = true;
     el('snooze-task').disabled = true;
     el('complete-next').disabled = true;
@@ -232,7 +270,7 @@ function renderSuggestion() {
   el('next-first-step').textContent = suggestion.firstStep
     ? 'First step: ' + suggestion.firstStep
     : '';
-  el('why-task').textContent = getSuggestionReason(suggestion);
+  el('why-task').textContent = getSuggestionReason(recommendation);
   el('next-details').hidden = false;
   el('snooze-task').disabled = false;
   el('complete-next').disabled = false;
@@ -372,6 +410,9 @@ function toggleTaskDone(taskId) {
 
   saveTasks();
   render();
+  showNextStatus(
+    task.done ? 'Marked done. It moved out of your active queue.' : 'Back in your active queue.',
+  );
 }
 
 function markSuggestedTaskDone() {
@@ -389,7 +430,7 @@ function markSuggestedTaskDone() {
 
   saveTasks();
   render();
-  showNextStatus('Marked done. See what feels realistic next.');
+  showNextStatus('Marked done. It moved out of your active queue.');
 }
 
 function deleteTask(taskId) {
@@ -424,7 +465,7 @@ function snoozeSuggestedTask() {
 
   saveTasks();
   render();
-  showNextStatus('Snoozed until tomorrow. It is still in your list.');
+  showNextStatus('Snoozed until tomorrow. It will return then and stays in your list.');
 }
 
 function wakeTask(taskId) {

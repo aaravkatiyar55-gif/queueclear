@@ -236,6 +236,12 @@ summary {
   font-weight: 650;
 }
 
+.current-energy-help {
+  margin: 6px 0 0;
+  color: #d7e8e2;
+  font-size: 0.8rem;
+}
+
 .current-energy select {
   width: min(100%, 170px);
   border-color: #6f918a;

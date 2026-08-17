@@ -94,12 +94,15 @@
         <h2 id="next-title">Start here</h2>
         <div class="current-energy">
           <label for="current-energy-input">How much energy do you have right now?</label>
-          <select id="current-energy-input">
+          <select id="current-energy-input" aria-describedby="current-energy-help">
             <option value="low">Low energy</option>
             <option value="medium" selected>Medium energy</option>
             <option value="high">High energy</option>
           </select>
         </div>
+        <p id="current-energy-help" class="current-energy-help">
+          QueueClear looks for tasks needing this energy first.
+        </p>
 
         <p id="next-task" class="next-task">Add a task when something comes up.</p>
         <div id="next-details" class="next-details" hidden>
@@ -141,7 +144,7 @@
         <h2 id="queue-title">Other tasks</h2>
         <p class="section-help">They stay here until you are ready for them.</p>
         <ul id="task-list" class="task-list"></ul>
-        <p id="empty-state" class="empty-state">Nothing is waiting right now. Add a task when it comes up.</p>
+        <p id="empty-state" class="empty-state">Your queue is clear. Add one small task above.</p>
       </section>
     </main>
 
