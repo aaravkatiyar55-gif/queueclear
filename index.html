@@ -8,7 +8,7 @@
       content="QueueClear turns an overwhelming task list into one clear next action."
     />
     <title>QueueClear — One clear next step</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?v=3" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to workspace</a>
@@ -84,8 +84,9 @@
                   maxlength="180"
                   autocomplete="off"
                   placeholder="What is the smallest way to begin?"
+                  aria-describedby="first-step-help"
                 />
-                <p class="field-help">Small first steps are easier to start.</p>
+                <p id="first-step-help" class="field-help">Small first steps are easier to start.</p>
               </div>
 
               <div class="field due-date-field">
@@ -137,7 +138,7 @@
             </label>
           </div>
           <p id="focus-countdown" class="focus-countdown" aria-live="off">10:00</p>
-          <div class="focus-controls" aria-label="Focus session controls">
+          <div class="focus-controls" role="group" aria-label="Focus session controls">
             <button id="start-focus" class="primary-button" type="button" disabled>Start focus</button>
             <button id="pause-focus" class="text-button" type="button" hidden>Pause</button>
             <button id="restart-focus" class="text-button" type="button" disabled>Restart</button>
@@ -151,7 +152,7 @@
               Session finished. Decide whether the task is done, needs another session, or should
               return to your queue.
             </p>
-            <div class="focus-controls">
+            <div class="focus-controls" role="group" aria-label="Finished session choices">
               <button id="finish-mark-done" class="primary-button" type="button">Mark done</button>
               <button id="focus-another" class="text-button" type="button">Start another session</button>
               <button id="return-to-queue" class="text-button" type="button">Return to queue</button>
@@ -162,7 +163,7 @@
           <button id="pick-another" class="text-button" type="button" disabled>Pick another</button>
           <details id="snooze-control" class="snooze-control">
             <summary>Snooze</summary>
-            <div class="snooze-options" aria-label="Snooze choices">
+            <div class="snooze-options" role="group" aria-label="Snooze choices">
               <button type="button" data-snooze="later-today">Later today</button>
               <button type="button" data-snooze="tomorrow">Tomorrow</button>
               <button type="button" data-snooze="next-week">Next week</button>
@@ -210,7 +211,7 @@
           <span id="undo-message"></span>
           <button id="undo-button" class="text-button" type="button">Undo</button>
         </div>
-        <ul id="task-list" class="task-list" aria-live="polite"></ul>
+        <ul id="task-list" class="task-list"></ul>
         <p id="empty-state" class="empty-state">
           Your queue is clear. Add a small task when something comes up.
         </p>
@@ -218,6 +219,6 @@
     </main>
 
     <footer><p>Local-first by design. Your queue stays in this browser.</p></footer>
-    <script src="script.js?v=6"></script>
+    <script src="script.js?v=8"></script>
   </body>
 </html>

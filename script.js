@@ -22,6 +22,11 @@ let editingTaskId = null;
 let undoAction = null;
 const defaultDocumentTitle = document.title;
 
+if (focusSession && !tasks.some((task) => task.id === focusSession.taskId)) {
+  focusSession = null;
+  saveFocusSession();
+}
+
 const el = (id) => document.getElementById(id);
 
 function normalizeWhitespace(value) {
@@ -536,7 +541,16 @@ function clearUndo(message) {
 }
 
 function focusTaskControl(taskId, control) {
-  requestAnimationFrame(() => el(control + '-' + taskId)?.focus());
+  requestAnimationFrame(() => {
+    const target = el(control + '-' + taskId) || document.querySelector('#task-list input[type="checkbox"]');
+    (target || el('clear-done')).focus();
+  });
+}
+
+function focusFirstQueueControl() {
+  requestAnimationFrame(() => {
+    (document.querySelector('#task-list input[type="checkbox"]') || el('clear-done')).focus();
+  });
 }
 
 function createEditField(labelText, control) {
@@ -637,7 +651,7 @@ function createTaskEditForm(task) {
       return;
     }
 
-    if (hasDuplicateActiveTitle(text, task.id)) {
+    if (!task.done && hasDuplicateActiveTitle(text, task.id)) {
       showQueueStatus('That task is already in your active queue.');
       titleInput.focus();
       return;
@@ -763,7 +777,7 @@ function renderTaskList() {
     deleteButton.addEventListener('click', () => deleteTask(task.id));
     actions.append(editButton, deleteButton);
 
-    checkbox.addEventListener('change', () => setTaskCompletion(task.id, checkbox.checked));
+    checkbox.addEventListener('change', () => setTaskCompletion(task.id, checkbox.checked, true));
 
     item.append(checkbox, content, energy, actions);
     taskList.append(item);
@@ -942,7 +956,7 @@ function clearCompletedTasks() {
   showQueueStatus('Completed tasks cleared.');
 }
 
-function setTaskCompletion(taskId, done) {
+function setTaskCompletion(taskId, done, shouldMoveFocus = false) {
   const task = tasks.find((savedTask) => savedTask.id === taskId);
 
   if (!task || task.done === done) {
@@ -967,6 +981,10 @@ function setTaskCompletion(taskId, done) {
   selectedTaskId = null;
   saveTasks();
   render();
+
+  if (shouldMoveFocus) {
+    focusTaskControl(taskId, 'complete');
+  }
 }
 
 function deleteTask(taskId) {
@@ -977,6 +995,11 @@ function deleteTask(taskId) {
   }
 
   const deletedTask = cloneTask(tasks[taskIndex]);
+
+  if (focusSession?.taskId === taskId) {
+    discardFocusSession();
+  }
+
   tasks = tasks.filter((task) => task.id !== taskId);
   selectedTaskId = null;
   editingTaskId = null;
@@ -989,6 +1012,7 @@ function deleteTask(taskId) {
   });
   render();
   showQueueStatus('Task deleted.');
+  focusFirstQueueControl();
 }
 
 function undoLastAction() {
@@ -1012,6 +1036,12 @@ function undoLastAction() {
   saveTasks();
   render();
   showQueueStatus('Restored the last change.');
+
+  if (action.type === 'clear-completed') {
+    requestAnimationFrame(() => el('clear-done').focus());
+  } else {
+    focusTaskControl(action.task.id, action.type === 'delete' ? 'edit-task' : 'complete');
+  }
 }
 
 function setFilter(button) {
@@ -1174,13 +1204,17 @@ function endFocus() {
     return;
   }
 
+  discardFocusSession();
+  render();
+  setFocusStatus('Focus session ended. The task is still in your queue.');
+}
+
+function discardFocusSession() {
   stopFocusInterval();
   focusSession = null;
   focusFinishedTaskId = null;
   saveFocusSession();
   resetDocumentTitle();
-  render();
-  setFocusStatus('Focus session ended. The task is still in your queue.');
 }
 
 function finishAndMarkDone() {
