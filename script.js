@@ -493,12 +493,26 @@ function getFocusTask() {
 function renderTimer() {
   const suggestedTask = getSuggestedTask();
   const focusTask = getFocusTask();
-  const canResume = Boolean(focusTask && focusSeconds > 0 && focusSeconds < 600);
+  const timerTask = focusTask || suggestedTask;
+  const canResume = Boolean(focusTask && focusTimer === null && focusSeconds > 0);
 
   el('timer-display').textContent = formatFocusTime(focusSeconds);
+  el('timer-task').textContent = timerTask
+    ? 'For: ' + timerTask.text
+    : 'Choose a task first.';
   el('start-focus').disabled = focusTimer !== null || (!suggestedTask && !focusTask);
   el('start-focus').textContent = canResume ? 'Resume focus' : 'Start 10-minute focus';
+  el('start-focus').setAttribute(
+    'aria-label',
+    timerTask
+      ? (canResume ? 'Resume focus for ' : 'Start 10-minute focus for ') + timerTask.text
+      : 'Start 10-minute focus',
+  );
   el('pause-focus').disabled = focusTimer === null;
+  el('pause-focus').setAttribute(
+    'aria-label',
+    focusTask ? 'Pause focus for ' + focusTask.text : 'Pause focus',
+  );
   el('reset-focus').disabled = focusTimer === null && focusSeconds === 600;
 }
 
@@ -506,13 +520,17 @@ function tickFocus() {
   focusSeconds -= 1;
 
   if (focusSeconds <= 0) {
+    const completedTask = getFocusTask();
     clearInterval(focusTimer);
     focusTimer = null;
     focusTaskId = null;
     focusSeconds = 0;
     renderTimer();
-    setFocusStatus('Focus session finished. Decide what to do next.');
-    showNextStatus('You can mark the task done or leave it in your list.');
+    setFocusStatus(
+      completedTask
+        ? 'Focus session finished for ' + completedTask.text + '. Decide whether it is done or needs another session.'
+        : 'Focus session finished. Decide whether the task is done or needs another session.',
+    );
     return;
   }
 
@@ -536,8 +554,7 @@ function startFocus() {
   focusTaskId = task.id;
   focusTimer = setInterval(tickFocus, 1000);
   renderTimer();
-  setFocusStatus('Focus started.');
-  showNextStatus('Focus started.');
+  setFocusStatus('Focus started for ' + task.text + '.');
 }
 
 function pauseFocus() {
@@ -548,7 +565,8 @@ function pauseFocus() {
   clearInterval(focusTimer);
   focusTimer = null;
   renderTimer();
-  setFocusStatus('Focus paused.');
+  const focusTask = getFocusTask();
+  setFocusStatus(focusTask ? 'Focus paused for ' + focusTask.text + '.' : 'Focus paused.');
 }
 
 function stopFocus(message) {

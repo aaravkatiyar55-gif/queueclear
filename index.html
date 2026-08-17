@@ -117,10 +117,17 @@
         <section class="focus-timer" aria-labelledby="timer-title">
           <div>
             <h3 id="timer-title">Focus for 10 minutes</h3>
+            <p id="timer-task" class="timer-task">Choose a task first.</p>
             <p id="timer-display" class="timer-display" aria-live="off">10:00</p>
           </div>
           <div class="timer-controls" role="group" aria-label="Focus timer controls">
-            <button id="start-focus" class="primary-button" type="button" disabled>
+            <button
+              id="start-focus"
+              class="primary-button"
+              type="button"
+              aria-describedby="timer-task"
+              disabled
+            >
               Start 10-minute focus
             </button>
             <button id="pause-focus" class="text-button" type="button" disabled>Pause</button>

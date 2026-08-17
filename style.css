@@ -322,6 +322,13 @@ summary {
   font-size: 0.9rem;
 }
 
+.timer-task {
+  margin: 4px 0 0;
+  color: #d7e8e2;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
 .timer-display {
   margin: 3px 0 0;
   color: #fffdf8;
