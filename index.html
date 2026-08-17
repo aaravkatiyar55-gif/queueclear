@@ -104,6 +104,20 @@
           QueueClear looks for tasks needing this energy first.
         </p>
 
+        <div class="current-time">
+          <label for="time-available-input">How much time do you have?</label>
+          <select id="time-available-input" aria-describedby="current-time-help">
+            <option value="" selected>No limit</option>
+            <option value="5">About 5 minutes</option>
+            <option value="15">About 15 minutes</option>
+            <option value="25">About 25 minutes</option>
+            <option value="45">About 45 minutes</option>
+          </select>
+        </div>
+        <p id="current-time-help" class="current-energy-help">
+          QueueClear first looks for tasks that match your energy and the time you have.
+        </p>
+
         <p id="next-task" class="next-task">Add a task when something comes up.</p>
         <div id="next-details" class="next-details" hidden>
           <p id="next-meta" class="next-detail"></p>

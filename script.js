@@ -2,13 +2,16 @@ const storageKey = 'queueclear.tasks.v2';
 const legacyStorageKey = 'queueclear.tasks.v1';
 const themeKey = 'queueclear.theme.v1';
 const currentEnergyKey = 'queueclear.current-energy.v1';
+const timeAvailableKey = 'queueclear.time-available.v1';
 const energyLevels = ['low', 'medium', 'high'];
 const estimateOptions = [5, 10, 15, 25, 45, 60];
+const timeAvailableOptions = [5, 15, 25, 45];
 const maxTitleLength = 110;
 const maxFirstStepLength = 180;
 
 let tasks = readTasks();
 let currentEnergy = readCurrentEnergy();
+let timeAvailable = readTimeAvailable();
 let focusTimer = null;
 let focusSeconds = 600;
 let focusTaskId = null;
@@ -72,6 +75,15 @@ function saveCurrentEnergy() {
   localStorage.setItem(currentEnergyKey, currentEnergy);
 }
 
+function readTimeAvailable() {
+  const saved = Number(localStorage.getItem(timeAvailableKey));
+  return timeAvailableOptions.includes(saved) ? saved : null;
+}
+
+function saveTimeAvailable() {
+  localStorage.setItem(timeAvailableKey, timeAvailable === null ? '' : String(timeAvailable));
+}
+
 function createTask({ text, energy, estimatedMinutes, firstStep }) {
   return normalizeTask({
     id: crypto.randomUUID(),
@@ -117,10 +129,22 @@ function compareByEstimateThenQueueOrder(first, second) {
   return first.createdAt - second.createdAt;
 }
 
+function getTasksThatFitTime(tasksToCheck) {
+  if (timeAvailable === null) {
+    return [];
+  }
+
+  return tasksToCheck.filter(
+    (task) => task.estimatedMinutes !== null && task.estimatedMinutes <= timeAvailable,
+  );
+}
+
 function getSuggestion() {
   const available = getAvailableTasks();
   const matchesEnergy = available.filter((task) => task.energy === currentEnergy);
-  const candidates = matchesEnergy.length > 0 ? matchesEnergy : available;
+  const energyCandidates = matchesEnergy.length > 0 ? matchesEnergy : available;
+  const timeMatches = getTasksThatFitTime(energyCandidates);
+  const candidates = timeMatches.length > 0 ? timeMatches : energyCandidates;
 
   return {
     task: candidates.slice().sort(compareByEstimateThenQueueOrder)[0] || null,
@@ -128,6 +152,8 @@ function getSuggestion() {
     candidates,
     energyFilteredChoices: matchesEnergy.length > 0 && matchesEnergy.length < available.length,
     usedEnergyFallback: matchesEnergy.length === 0 && available.length > 0,
+    usedTimeFit: timeMatches.length > 0,
+    usedTimeFallback: timeAvailable !== null && timeMatches.length === 0 && available.length > 0,
   };
 }
 
@@ -158,25 +184,43 @@ function getTieBreakReason(task, candidates) {
     }
   }
 
-  return 'It was added first among tasks with the same available details.';
+  return 'The remaining choices are tied, so QueueClear kept the task added first.';
 }
 
 function getSuggestionReason(suggestion) {
-  const { task, candidates, energyFilteredChoices, usedEnergyFallback } = suggestion;
-  const tieBreakReason =
-    energyFilteredChoices && candidates.length === 1
-      ? 'It is the only task that matches this energy.'
-      : getTieBreakReason(task, candidates);
+  const {
+    task,
+    candidates,
+    energyFilteredChoices,
+    usedEnergyFallback,
+    usedTimeFit,
+    usedTimeFallback,
+  } = suggestion;
+  const reasons = [];
 
   if (energyFilteredChoices) {
-    return 'It matches your ' + currentEnergy + '-energy setting. ' + tieBreakReason;
+    reasons.push('It matches your ' + currentEnergy + '-energy setting.');
   }
 
   if (usedEnergyFallback) {
-    return 'No task matches your ' + currentEnergy + '-energy setting. ' + tieBreakReason;
+    reasons.push('No task matches your ' + currentEnergy + '-energy setting.');
   }
 
-  return tieBreakReason;
+  if (usedTimeFit) {
+    reasons.push('It fits the ' + formatAvailableTime(timeAvailable) + ' you have.');
+  }
+
+  if (usedTimeFallback) {
+    reasons.push(
+      'No estimated task fits the ' + formatAvailableTime(timeAvailable) + ' you have, so this is the closest ready option.',
+    );
+  }
+
+  if (candidates.length > 1 || reasons.length === 0 || usedEnergyFallback || usedTimeFallback) {
+    reasons.push(getTieBreakReason(task, candidates));
+  }
+
+  return reasons.join(' ');
 }
 
 function formatEnergy(energy) {
@@ -189,6 +233,10 @@ function formatEstimate(minutes, longForm = false) {
   }
 
   return longForm ? 'About ' + minutes + ' minutes' : minutes + ' min';
+}
+
+function formatAvailableTime(minutes) {
+  return minutes + ' minutes';
 }
 
 function getTaskContext(task, { longEstimate = false, includeFirstStep = true } = {}) {
@@ -248,6 +296,7 @@ function renderSuggestion() {
   el('current-energy-input').value = currentEnergy;
   el('current-energy-help').textContent =
     'QueueClear looks for ' + currentEnergy + '-energy tasks first.';
+  el('time-available-input').value = timeAvailable === null ? '' : String(timeAvailable);
 
   if (!suggestion) {
     el('next-task').textContent = hasActiveTasks
@@ -266,10 +315,10 @@ function renderSuggestion() {
 
   el('next-task').textContent = suggestion.text;
   el('next-meta').textContent = details.join(' · ');
-  el('next-first-step').hidden = !suggestion.firstStep;
+  el('next-first-step').hidden = false;
   el('next-first-step').textContent = suggestion.firstStep
     ? 'First step: ' + suggestion.firstStep
-    : '';
+    : 'No first step saved. Begin with the smallest visible part.';
   el('why-task').textContent = getSuggestionReason(recommendation);
   el('next-details').hidden = false;
   el('snooze-task').disabled = false;
@@ -585,6 +634,18 @@ function setCurrentEnergy() {
   showNextStatus('Start here now matches your ' + currentEnergy + '-energy setting.');
 }
 
+function setTimeAvailable() {
+  const selectedMinutes = Number(el('time-available-input').value);
+  timeAvailable = timeAvailableOptions.includes(selectedMinutes) ? selectedMinutes : null;
+  saveTimeAvailable();
+  render();
+  showNextStatus(
+    timeAvailable === null
+      ? 'Start here can use tasks of any estimate.'
+      : 'Start here will first look for tasks that fit ' + formatAvailableTime(timeAvailable) + '.',
+  );
+}
+
 function applyTheme() {
   const isCalm = localStorage.getItem(themeKey) === 'calm';
   document.body.classList.toggle('calm', isCalm);
@@ -600,6 +661,7 @@ function toggleTheme() {
 
 el('task-form').addEventListener('submit', handleTaskSubmit);
 el('current-energy-input').addEventListener('change', setCurrentEnergy);
+el('time-available-input').addEventListener('change', setTimeAvailable);
 el('start-focus').addEventListener('click', startFocus);
 el('pause-focus').addEventListener('click', pauseFocus);
 el('reset-focus').addEventListener('click', () => stopFocus('Timer reset.'));
