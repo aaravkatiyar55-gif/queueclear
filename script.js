@@ -156,6 +156,28 @@ function formatEnergy(energy) {
   return energy.charAt(0).toUpperCase() + energy.slice(1) + ' energy';
 }
 
+function formatEstimate(minutes, longForm = false) {
+  if (!minutes) {
+    return '';
+  }
+
+  return longForm ? 'About ' + minutes + ' minutes' : minutes + ' min';
+}
+
+function getTaskContext(task, { longEstimate = false, includeFirstStep = true } = {}) {
+  const details = [];
+
+  if (task.estimatedMinutes) {
+    details.push(formatEstimate(task.estimatedMinutes, longEstimate));
+  }
+
+  if (includeFirstStep && task.firstStep) {
+    details.push('First step: ' + task.firstStep);
+  }
+
+  return details;
+}
+
 function formatFocusTime(seconds) {
   const minutes = Math.floor(seconds / 60);
   return minutes + ':' + String(seconds % 60).padStart(2, '0');
@@ -199,10 +221,10 @@ function renderSuggestion() {
     return;
   }
 
-  const details = [formatEnergy(suggestion.energy)];
-  if (suggestion.estimatedMinutes) {
-    details.push('about ' + suggestion.estimatedMinutes + ' minutes');
-  }
+  const details = [
+    formatEnergy(suggestion.energy),
+    ...getTaskContext(suggestion, { longEstimate: true, includeFirstStep: false }),
+  ];
 
   el('next-task').textContent = suggestion.text;
   el('next-meta').textContent = details.join(' · ');
@@ -249,13 +271,7 @@ function renderTaskList() {
     title.textContent = task.text;
     content.append(title);
 
-    const details = [];
-    if (task.estimatedMinutes) {
-      details.push(task.estimatedMinutes + ' min');
-    }
-    if (task.firstStep) {
-      details.push('First step: ' + task.firstStep);
-    }
+    const details = getTaskContext(task);
     if (details.length > 0) {
       meta.className = 'task-meta';
       meta.textContent = details.join(' · ');
