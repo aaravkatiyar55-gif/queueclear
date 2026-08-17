@@ -8,7 +8,7 @@
       content="QueueClear helps students choose one small task to start."
     />
     <title>QueueClear — one task to start</title>
-    <link rel="stylesheet" href="style.css?v=7" />
+    <link rel="stylesheet" href="style.css?v=8" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to tasks</a>
@@ -171,12 +171,32 @@
       <section class="data-panel" aria-labelledby="data-title">
         <h2 id="data-title">Your data</h2>
         <p>QueueClear saves tasks only in this browser. Download a copy if you want to keep one.</p>
-        <button id="download-backup" class="text-button" type="button">Download backup</button>
+        <div class="data-actions">
+          <button id="download-backup" class="text-button" type="button">Download backup</button>
+          <button id="restore-backup" class="text-button" type="button">Restore backup</button>
+        </div>
+        <input
+          id="restore-backup-input"
+          type="file"
+          accept=".json,application/json"
+          aria-label="Choose a QueueClear JSON backup file"
+          hidden
+        />
+        <section id="restore-preview" class="restore-preview" aria-labelledby="restore-title" hidden>
+          <h3 id="restore-title">Backup ready to restore</h3>
+          <p id="restore-summary"></p>
+          <p id="restore-preferences" class="restore-preferences"></p>
+          <p class="restore-warning">Restoring replaces current QueueClear data in this browser.</p>
+          <div class="restore-actions">
+            <button id="confirm-restore" class="primary-button" type="button">Replace current data</button>
+            <button id="cancel-restore" class="text-button" type="button">Cancel</button>
+          </div>
+        </section>
         <p id="data-message" class="data-message" role="status" aria-live="polite"></p>
       </section>
     </main>
 
     <footer><p>Saved only in this browser.</p></footer>
-    <script src="script.js?v=13"></script>
+    <script src="script.js?v=14"></script>
   </body>
 </html>

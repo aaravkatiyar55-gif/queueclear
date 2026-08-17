@@ -15,6 +15,7 @@ let timeAvailable = readTimeAvailable();
 let focusTimer = null;
 let focusSeconds = 600;
 let focusTaskId = null;
+let pendingRestore = null;
 const statusTimers = {};
 
 const el = (id) => document.getElementById(id);
@@ -278,6 +279,164 @@ function downloadBackup() {
   downloadLink.remove();
   window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
   showStatus('data-message', 'Backup downloaded.');
+}
+
+function hasOwnProperty(object, property) {
+  return Object.prototype.hasOwnProperty.call(object, property);
+}
+
+function getRestoredPreference(backup, key, isValid, fallback) {
+  if (!hasOwnProperty(backup, key)) {
+    return { value: fallback, included: false };
+  }
+
+  if (!isValid(backup[key])) {
+    throw new Error('This backup has an unsupported ' + key + ' preference.');
+  }
+
+  return { value: backup[key], included: true };
+}
+
+function validateBackup(candidate) {
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new Error('This file is not a QueueClear backup.');
+  }
+
+  if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.tasks)) {
+    throw new Error('This backup has an unsupported QueueClear structure.');
+  }
+
+  const restoredTasks = candidate.tasks.map(normalizeTask);
+  if (restoredTasks.some((task) => task === null)) {
+    throw new Error('This backup contains a task QueueClear cannot recover safely.');
+  }
+
+  const taskIds = new Set(restoredTasks.map((task) => task.id));
+  if (taskIds.size !== restoredTasks.length) {
+    throw new Error('This backup contains duplicate task IDs.');
+  }
+
+  const theme = getRestoredPreference(
+    candidate,
+    'theme',
+    (value) => value === 'paper' || value === 'calm',
+    'paper',
+  );
+  const energy = getRestoredPreference(
+    candidate,
+    'currentEnergy',
+    (value) => energyLevels.includes(value),
+    'medium',
+  );
+  const availableTime = getRestoredPreference(
+    candidate,
+    'timeAvailable',
+    (value) => value === null || timeAvailableOptions.includes(value),
+    null,
+  );
+
+  return {
+    tasks: restoredTasks,
+    theme,
+    currentEnergy: energy,
+    timeAvailable: availableTime,
+  };
+}
+
+function formatRestorePreference(label, preference, fallbackLabel) {
+  return preference.included
+    ? label + ': saved'
+    : label + ': not included (' + fallbackLabel + ' will be used)';
+}
+
+function renderRestorePreview(backup) {
+  const taskLabel = backup.tasks.length === 1 ? 'task' : 'tasks';
+  el('restore-summary').textContent =
+    'Valid backup: ' + backup.tasks.length + ' recoverable ' + taskLabel + '.';
+  el('restore-preferences').textContent = [
+    formatRestorePreference('Theme', backup.theme, 'paper'),
+    formatRestorePreference('Energy', backup.currentEnergy, 'medium'),
+    formatRestorePreference('Available time', backup.timeAvailable, 'no limit'),
+  ].join(' ');
+  el('restore-preview').hidden = false;
+  el('confirm-restore').focus();
+}
+
+function clearRestorePreview({ returnFocus = false } = {}) {
+  pendingRestore = null;
+  el('restore-preview').hidden = true;
+  el('restore-backup-input').value = '';
+
+  if (returnFocus) {
+    el('restore-backup').focus();
+  }
+}
+
+async function previewRestoreBackup(event) {
+  const backupFile = event.target.files?.[0];
+  if (!backupFile) {
+    return;
+  }
+
+  const isJsonFile =
+    backupFile.name.toLowerCase().endsWith('.json') || backupFile.type === 'application/json';
+  if (!isJsonFile) {
+    clearRestorePreview();
+    showStatus('data-message', 'Choose a QueueClear JSON backup file.');
+    return;
+  }
+
+  try {
+    let parsedBackup;
+    try {
+      parsedBackup = JSON.parse(await backupFile.text());
+    } catch {
+      throw new Error('That file is not valid JSON. Choose a QueueClear backup file.');
+    }
+
+    pendingRestore = validateBackup(parsedBackup);
+    renderRestorePreview(pendingRestore);
+  } catch (error) {
+    clearRestorePreview();
+    showStatus(
+      'data-message',
+      error instanceof Error ? error.message : 'QueueClear could not read that backup.',
+    );
+  }
+}
+
+function openRestorePicker() {
+  clearRestorePreview();
+  el('restore-backup-input').click();
+}
+
+function restoreBackup() {
+  if (!pendingRestore) {
+    showStatus('data-message', 'Choose a valid backup before restoring.');
+    return;
+  }
+
+  tasks = pendingRestore.tasks;
+  currentEnergy = pendingRestore.currentEnergy.value;
+  timeAvailable = pendingRestore.timeAvailable.value;
+  localStorage.setItem(storageKey, JSON.stringify(tasks));
+  localStorage.removeItem(legacyStorageKey);
+  localStorage.setItem(themeKey, pendingRestore.theme.value);
+  localStorage.setItem(currentEnergyKey, currentEnergy);
+  localStorage.setItem(
+    timeAvailableKey,
+    timeAvailable === null ? '' : String(timeAvailable),
+  );
+
+  clearInterval(focusTimer);
+  focusTimer = null;
+  focusSeconds = 600;
+  focusTaskId = null;
+  clearRestorePreview();
+  applyTheme();
+  render();
+  showStatus('data-message', 'Backup restored in this browser.');
+  el('restore-backup').focus();
 }
 
 function getTaskContext(task, { longEstimate = false, includeFirstStep = true } = {}) {
@@ -704,6 +863,10 @@ el('task-form').addEventListener('submit', handleTaskSubmit);
 el('current-energy-input').addEventListener('change', setCurrentEnergy);
 el('time-available-input').addEventListener('change', setTimeAvailable);
 el('download-backup').addEventListener('click', downloadBackup);
+el('restore-backup').addEventListener('click', openRestorePicker);
+el('restore-backup-input').addEventListener('change', previewRestoreBackup);
+el('confirm-restore').addEventListener('click', restoreBackup);
+el('cancel-restore').addEventListener('click', () => clearRestorePreview({ returnFocus: true }));
 el('start-focus').addEventListener('click', startFocus);
 el('pause-focus').addEventListener('click', pauseFocus);
 el('reset-focus').addEventListener('click', () => stopFocus('Timer reset.'));
