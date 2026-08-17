@@ -1,13 +1,15 @@
-const storageKey = 'queueclear.tasks.v1';
+const storageKey = 'queueclear.tasks.v2';
+const legacyStorageKey = 'queueclear.tasks.v1';
 const themeKey = 'queueclear.theme.v1';
 let tasks = readTasks(); let filter = 'all'; let focusTimer;
 const el = (id) => document.getElementById(id);
-function readTasks(){try{return JSON.parse(localStorage.getItem(storageKey)) || []}catch{return []}}
-function saveTasks(){localStorage.setItem(storageKey, JSON.stringify(tasks))}
+function normalizeTask(candidate){if(!candidate||typeof candidate.text!=='string'||!candidate.text.trim())return null;return{id:typeof candidate.id==='string'?candidate.id:crypto.randomUUID(),text:candidate.text.trim().replace(/\s+/g,' '),energy:['low','medium','high'].includes(candidate.energy)?candidate.energy:'medium',done:Boolean(candidate.done),createdAt:Number.isFinite(candidate.createdAt)?candidate.createdAt:Date.now()}}
+function readTasks(){try{const saved=JSON.parse(localStorage.getItem(storageKey)||localStorage.getItem(legacyStorageKey)||'[]');return Array.isArray(saved)?saved.map(normalizeTask).filter(Boolean):[]}catch{return []}}
+function saveTasks(){localStorage.setItem(storageKey, JSON.stringify(tasks));localStorage.removeItem(legacyStorageKey)}
 function pickNext(){return tasks.find((task)=>!task.done)}
 function render(){const next=pickNext(); el('next-task').textContent=next?next.text:'Your queue is clear. Take a breath.'; el('start-focus').disabled=!next;el('complete-next').disabled=!next; const visible=tasks.filter(t=>filter==='all'||t.energy===filter);el('task-list').innerHTML='';visible.forEach(task=>{const item=document.createElement('li');item.className=`task-row ${task.done?'is-done':''}`;item.innerHTML=`<input type="checkbox" aria-label="Mark ${escapeHtml(task.text)} complete" ${task.done?'checked':''}><span class="task-text">${escapeHtml(task.text)}</span><span class="energy-tag">${task.energy}</span><button class="text-button delete-task" type="button" aria-label="Delete ${escapeHtml(task.text)}">Delete</button>`;item.querySelector('input').onchange=()=>{task.done=!task.done;saveTasks();render()};item.querySelector('.delete-task').onclick=()=>{tasks=tasks.filter(t=>t.id!==task.id);saveTasks();render()};el('task-list').append(item)});el('empty-state').hidden=visible.length>0}
 function escapeHtml(value){return value.replace(/[&<>'"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
-el('task-form').addEventListener('submit',(event)=>{event.preventDefault();const input=el('task-input');const text=input.value.trim();if(!text){return}tasks.push({id:crypto.randomUUID(),text,energy:el('energy-input').value,done:false});saveTasks();input.value='';el('form-message').textContent='Added. Your next action is ready.';render();input.focus()});
+el('task-form').addEventListener('submit',(event)=>{event.preventDefault();const input=el('task-input');const text=input.value.trim().replace(/\s+/g,' ');if(!text){el('form-message').textContent='Add a short task title first.';input.focus();return}if(tasks.some((task)=>task.text.toLocaleLowerCase()===text.toLocaleLowerCase()&&!task.done)){el('form-message').textContent='That task is already in your active queue.';input.focus();return}tasks.push(normalizeTask({id:crypto.randomUUID(),text,energy:el('energy-input').value,done:false,createdAt:Date.now()}));saveTasks();input.value='';el('form-message').textContent='Added. Your next action is ready.';render();input.focus()});
 el('complete-next').onclick=()=>{const next=pickNext();if(next){next.done=true;saveTasks();render()}};
 el('clear-done').onclick=()=>{tasks=tasks.filter(t=>!t.done);saveTasks();render()};
 document.querySelectorAll('.filter').forEach(button=>button.onclick=()=>{filter=button.dataset.filter;document.querySelectorAll('.filter').forEach(item=>{const active=item===button;item.classList.toggle('is-active',active);item.setAttribute('aria-pressed',String(active))});render()});
