@@ -15,7 +15,7 @@ Assignments, revision topics, chores, and ideas can pile up into one noisy list.
 - Show one suggested task with a plain-language explanation of the rule used.
 - Snooze a task until tomorrow without losing it, then wake it early if plans change.
 - Start a small focus session connected to the selected task.
-- Download a local JSON backup when a browser-only copy is not enough.
+- Download a local JSON backup and restore it in the same browser when a browser-only copy is not enough.
 - Keep the rest of the queue available without turning it into a dashboard.
 
 ## How the suggested task works
@@ -42,12 +42,20 @@ The “Why this task?” note names the part of that rule that decided the curre
 - Mark done and delete actions.
 - A 10-minute focus timer with Start, Pause, Resume, and Reset controls.
 - The focus timer names the task it is currently for.
-- A local JSON backup download containing QueueClear tasks and preferences only.
+- Local JSON backup download and restore for QueueClear tasks and supported preferences.
 - Paper and calm themes, visible keyboard focus, reduced-motion support, and responsive layouts.
+
+## Back up and restore
+
+QueueClear data stays in the current browser. To keep a copy, choose **Download backup** in the Your data section and save the JSON file somewhere you can find later.
+
+To restore it, choose **Restore backup**, select that JSON file, and check the preview. QueueClear shows the recoverable task count and whether the saved theme, energy, and available-time preferences are included. Choose **Replace current data** only if you want to continue.
+
+Restore replaces current QueueClear data in that browser. It does not upload the file or sync data to another device. Malformed JSON files and backups with an unsupported QueueClear structure are rejected before any current data changes.
 
 ## Privacy
 
-QueueClear saves tasks, energy and time preferences, and the theme preference in this browser through localStorage. No account is required and no data is synced between devices. Clearing browser storage can remove saved tasks. A downloaded backup is optional and stays a normal local file; it is not cloud sync. Do not use QueueClear for sensitive information.
+QueueClear saves tasks, energy and time preferences, and the theme preference in this browser through localStorage. No account is required and no data is synced between devices. Clearing browser storage can remove saved tasks. A downloaded backup is optional and stays a normal local file; restore reads that file only in this browser. Do not use QueueClear for sensitive information.
 
 ## Run locally
 
@@ -69,7 +77,7 @@ Plain HTML, CSS, and JavaScript. There are no packages, accounts, databases, or 
 
 ## Testing
 
-Manual checks completed for the current app include:
+Checks completed for the current app include:
 
 - blank-title and duplicate-active-task validation;
 - creating tasks with and without an estimate or first step;
@@ -79,13 +87,14 @@ Manual checks completed for the current app include:
 - snooze, wake, mark-done, completed-title reuse, and delete behavior;
 - timer start, pause, resume, reset, and refresh reset behavior;
 - backup-download status after the local JSON action;
+- backup preview, invalid-backup rejection, cancellation, and confirmed local restore;
 - keyboard focus on the skip link and keyboard use of the context disclosure;
 - 320px, 360px, 768px, and 1280px checks with no horizontal page overflow.
 
 ## Limitations
 
 - Data stays in one browser; there is no account or device sync.
-- This version can export a backup but cannot import one.
+- Restore replaces current QueueClear data in one browser; it is not cloud or device sync.
 - The timer intentionally resets after a browser refresh.
 - There are no notifications, calendar connections, or cloud backups.
 - QueueClear is not a medical or clinical productivity tool.
