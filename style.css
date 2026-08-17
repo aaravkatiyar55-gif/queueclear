@@ -320,6 +320,77 @@ h2 {
   font-size: 0.9rem;
 }
 
+.focus-session {
+  margin: 22px 0;
+  padding: 16px;
+  border: 1px solid #6d8f89;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.focus-session-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.focus-session .eyebrow {
+  color: #b6d8d1;
+}
+
+.focus-session h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.focus-session-heading label {
+  display: grid;
+  gap: 5px;
+  color: #b6d8d1;
+  font: 600 0.76rem/1.2 system-ui, sans-serif;
+}
+
+.focus-session select {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid #6d8f89;
+  border-radius: 6px;
+  background: var(--ink);
+  color: #fff;
+  font: 600 0.8rem/1 system-ui, sans-serif;
+}
+
+.focus-countdown {
+  margin: 17px 0 12px;
+  font: 700 clamp(2rem, 8vw, 3.1rem)/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: -0.07em;
+}
+
+.focus-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.focus-session .focus-status {
+  min-height: 1.3em;
+  margin-top: 12px;
+}
+
+.session-finished {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #6d8f89;
+}
+
+.session-finished p {
+  margin: 0 0 12px;
+  color: #d9f3ed;
+  font-size: 0.9rem;
+}
+
 .next-actions {
   display: flex;
   align-items: center;
@@ -548,6 +619,18 @@ body.calm {
   }
 
   .next-actions > * {
+    width: 100%;
+  }
+
+  .focus-session-heading,
+  .focus-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .focus-session-heading label,
+  .focus-session select,
+  .focus-controls > * {
     width: 100%;
   }
 

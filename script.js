@@ -2,16 +2,22 @@ const storageKey = 'queueclear.tasks.v2';
 const legacyStorageKey = 'queueclear.tasks.v1';
 const themeKey = 'queueclear.theme.v1';
 const currentEnergyKey = 'queueclear.current-energy.v1';
+const focusSessionKey = 'queueclear.focus-session.v1';
 const energyLevels = ['low', 'medium', 'high'];
 const estimateOptions = [5, 10, 15, 25, 45, 60];
+const focusDurationOptions = [5, 10, 15, 25];
 const maxTitleLength = 110;
 const maxFirstStepLength = 180;
 
 let tasks = readTasks();
 let filter = 'all';
-let focusTimer;
+let focusTimer = null;
 let currentEnergy = readCurrentEnergy();
 let selectedTaskId = null;
+let focusSession = readFocusSession();
+let focusFinishedTaskId = null;
+let lastSuggestedFocusTaskId = null;
+const defaultDocumentTitle = document.title;
 
 const el = (id) => document.getElementById(id);
 
@@ -83,6 +89,42 @@ function readCurrentEnergy() {
 
 function saveCurrentEnergy() {
   localStorage.setItem(currentEnergyKey, currentEnergy);
+}
+
+function normalizeFocusSession(candidate) {
+  const taskId = typeof candidate?.taskId === 'string' ? candidate.taskId : null;
+  const durationMinutes = Number(candidate?.durationMinutes);
+  const status = candidate?.status;
+
+  if (!taskId || !focusDurationOptions.includes(durationMinutes)) {
+    return null;
+  }
+
+  if (status === 'running' && normalizeTimestamp(candidate.endsAt) !== null) {
+    return { taskId, durationMinutes, status, endsAt: candidate.endsAt };
+  }
+
+  if (status === 'paused' && Number.isInteger(candidate.remainingSeconds) && candidate.remainingSeconds > 0) {
+    return { taskId, durationMinutes, status, remainingSeconds: candidate.remainingSeconds };
+  }
+
+  return null;
+}
+
+function readFocusSession() {
+  try {
+    return normalizeFocusSession(JSON.parse(localStorage.getItem(focusSessionKey) || 'null'));
+  } catch {
+    return null;
+  }
+}
+
+function saveFocusSession() {
+  if (focusSession) {
+    localStorage.setItem(focusSessionKey, JSON.stringify(focusSession));
+  } else {
+    localStorage.removeItem(focusSessionKey);
+  }
 }
 
 function createTask({ text, energy, estimatedMinutes, firstStep, dueDate }) {
@@ -231,6 +273,151 @@ function formatSnoozeTime(timestamp) {
   }).format(new Date(timestamp));
 }
 
+function formatFocusTime(totalSeconds) {
+  const safeSeconds = Math.max(0, totalSeconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = String(safeSeconds % 60).padStart(2, '0');
+  return minutes + ':' + seconds;
+}
+
+function getFocusTask() {
+  return focusSession ? tasks.find((task) => task.id === focusSession.taskId) || null : null;
+}
+
+function getFocusSecondsRemaining(now = Date.now()) {
+  if (!focusSession) {
+    return 0;
+  }
+
+  if (focusSession.status === 'paused') {
+    return focusSession.remainingSeconds;
+  }
+
+  return Math.max(0, Math.ceil((focusSession.endsAt - now) / 1000));
+}
+
+function getDefaultFocusMinutes(task) {
+  return task && focusDurationOptions.includes(task.estimatedMinutes) ? task.estimatedMinutes : 10;
+}
+
+function setFocusStatus(message) {
+  el('focus-status').textContent = message;
+}
+
+function resetDocumentTitle() {
+  document.title = defaultDocumentTitle;
+}
+
+function updateDocumentTitle(seconds) {
+  document.title = formatFocusTime(seconds) + ' — QueueClear';
+}
+
+function stopFocusInterval() {
+  if (focusTimer) {
+    clearInterval(focusTimer);
+    focusTimer = null;
+  }
+}
+
+function renderFocusControls() {
+  const recommendation = getCurrentRecommendation();
+  const sessionTask = getFocusTask();
+  const suggestedTask = sessionTask || recommendation?.task || null;
+  const focusPanel = el('focus-session');
+  const durationInput = el('focus-duration');
+  const startButton = el('start-focus');
+  const pauseButton = el('pause-focus');
+  const restartButton = el('restart-focus');
+  const endButton = el('end-focus');
+  const finishedPanel = el('session-finished');
+
+  focusPanel.hidden = !suggestedTask;
+
+  if (!suggestedTask) {
+    return;
+  }
+
+  if (!focusSession && suggestedTask.id !== lastSuggestedFocusTaskId) {
+    durationInput.value = String(getDefaultFocusMinutes(suggestedTask));
+    lastSuggestedFocusTaskId = suggestedTask.id;
+  }
+
+  if (!focusSession) {
+    const selectedMinutes = Number(durationInput.value);
+    el('focus-countdown').textContent = formatFocusTime(selectedMinutes * 60);
+    startButton.hidden = false;
+    startButton.textContent = 'Start focus';
+    startButton.disabled = false;
+    pauseButton.hidden = true;
+    restartButton.disabled = true;
+    endButton.disabled = true;
+    durationInput.disabled = false;
+    finishedPanel.hidden = focusFinishedTaskId !== suggestedTask.id;
+    if (focusFinishedTaskId !== suggestedTask.id) {
+      setFocusStatus('Choose a length when you are ready.');
+    }
+    return;
+  }
+
+  const remainingSeconds = getFocusSecondsRemaining();
+  el('focus-countdown').textContent = formatFocusTime(remainingSeconds);
+  durationInput.value = String(focusSession.durationMinutes);
+  durationInput.disabled = true;
+  restartButton.disabled = false;
+  endButton.disabled = false;
+  finishedPanel.hidden = true;
+
+  if (focusSession.status === 'running') {
+    startButton.hidden = true;
+    pauseButton.hidden = false;
+    pauseButton.textContent = 'Pause';
+    setFocusStatus('Focus session running.');
+  } else {
+    startButton.hidden = false;
+    startButton.textContent = 'Resume';
+    startButton.disabled = false;
+    pauseButton.hidden = true;
+    setFocusStatus('Focus paused. Your time is saved here.');
+  }
+}
+
+function finishFocusSession() {
+  const finishedTaskId = focusSession?.taskId || null;
+  stopFocusInterval();
+  focusSession = null;
+  saveFocusSession();
+  resetDocumentTitle();
+  focusFinishedTaskId = finishedTaskId;
+  render();
+  setFocusStatus('Focus session finished.');
+}
+
+function updateRunningFocus() {
+  if (!focusSession || focusSession.status !== 'running') {
+    stopFocusInterval();
+    resetDocumentTitle();
+    return;
+  }
+
+  const remainingSeconds = getFocusSecondsRemaining();
+  if (remainingSeconds <= 0) {
+    finishFocusSession();
+    return;
+  }
+
+  el('focus-countdown').textContent = formatFocusTime(remainingSeconds);
+  updateDocumentTitle(remainingSeconds);
+}
+
+function beginFocusInterval() {
+  stopFocusInterval();
+  updateRunningFocus();
+
+  if (focusSession?.status === 'running') {
+    focusTimer = setInterval(updateRunningFocus, 1000);
+  }
+}
+
 function createActionButton(label, className, ariaLabel) {
   const button = document.createElement('button');
   button.className = 'text-button ' + className;
@@ -334,10 +521,10 @@ function renderNextAction() {
       ? 'No task is ready right now. Wake a snoozed task when you are ready.'
       : 'Your queue is clear. Take a breath.';
     el('next-details').hidden = true;
-    el('start-focus').disabled = true;
     el('pick-another').disabled = true;
     el('complete-next').disabled = true;
     el('snooze-control').hidden = true;
+    renderFocusControls();
     return;
   }
 
@@ -360,10 +547,10 @@ function renderNextAction() {
     : '';
   renderWhyTask(recommendation.reasons);
 
-  el('start-focus').disabled = false;
   el('pick-another').disabled = false;
   el('complete-next').disabled = false;
   el('snooze-control').hidden = false;
+  renderFocusControls();
 }
 
 function renderEmptyState(visibleTasks) {
@@ -534,28 +721,105 @@ function snoozeCurrentTask(choice) {
   );
 }
 
-function startFocus() {
-  let seconds = 600;
-  clearInterval(focusTimer);
-  el('start-focus').textContent = 'Focus running';
-  el('start-focus').disabled = true;
-
-  function tick() {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = String(seconds % 60).padStart(2, '0');
-    el('focus-status').textContent =
-      'Focus session: ' + minutes + ':' + remainingSeconds + ' remaining.';
-
-    if (seconds-- <= 0) {
-      clearInterval(focusTimer);
-      el('focus-status').textContent = 'Nice work. Take a short break.';
-      el('start-focus').textContent = 'Start another 10 minutes';
-      el('start-focus').disabled = false;
-    }
+function startOrResumeFocus() {
+  if (focusSession?.status === 'paused') {
+    focusSession = {
+      ...focusSession,
+      status: 'running',
+      endsAt: Date.now() + focusSession.remainingSeconds * 1000,
+    };
+    delete focusSession.remainingSeconds;
+    saveFocusSession();
+    render();
+    beginFocusInterval();
+    setFocusStatus('Focus resumed.');
+    return;
   }
 
-  tick();
-  focusTimer = setInterval(tick, 1000);
+  const recommendation = getCurrentRecommendation();
+  if (!recommendation) {
+    return;
+  }
+
+  const durationMinutes = Number(el('focus-duration').value);
+  focusSession = {
+    taskId: recommendation.task.id,
+    durationMinutes: focusDurationOptions.includes(durationMinutes) ? durationMinutes : 10,
+    status: 'running',
+    endsAt: Date.now() + durationMinutes * 60 * 1000,
+  };
+  focusFinishedTaskId = null;
+  saveFocusSession();
+  render();
+  beginFocusInterval();
+  setFocusStatus('Focus started.');
+}
+
+function pauseFocus() {
+  if (!focusSession || focusSession.status !== 'running') {
+    return;
+  }
+
+  focusSession = {
+    taskId: focusSession.taskId,
+    durationMinutes: focusSession.durationMinutes,
+    status: 'paused',
+    remainingSeconds: getFocusSecondsRemaining(),
+  };
+  stopFocusInterval();
+  saveFocusSession();
+  resetDocumentTitle();
+  render();
+  setFocusStatus('Focus paused.');
+}
+
+function restartFocus() {
+  if (!focusSession) {
+    return;
+  }
+
+  focusSession = {
+    taskId: focusSession.taskId,
+    durationMinutes: focusSession.durationMinutes,
+    status: 'running',
+    endsAt: Date.now() + focusSession.durationMinutes * 60 * 1000,
+  };
+  focusFinishedTaskId = null;
+  saveFocusSession();
+  render();
+  beginFocusInterval();
+  setFocusStatus('Focus restarted.');
+}
+
+function endFocus() {
+  if (!focusSession) {
+    return;
+  }
+
+  stopFocusInterval();
+  focusSession = null;
+  focusFinishedTaskId = null;
+  saveFocusSession();
+  resetDocumentTitle();
+  render();
+  setFocusStatus('Focus session ended. The task is still in your queue.');
+}
+
+function finishAndMarkDone() {
+  focusFinishedTaskId = null;
+  completeNextTask();
+}
+
+function startAnotherFocusSession() {
+  focusFinishedTaskId = null;
+  render();
+  startOrResumeFocus();
+}
+
+function returnToQueue() {
+  focusFinishedTaskId = null;
+  render();
+  showNextStatus('The task is still safe in your queue.');
 }
 
 function applyTheme() {
@@ -574,7 +838,13 @@ function toggleTheme() {
 el('task-form').addEventListener('submit', handleTaskSubmit);
 el('complete-next').addEventListener('click', completeNextTask);
 el('clear-done').addEventListener('click', clearCompletedTasks);
-el('start-focus').addEventListener('click', startFocus);
+el('start-focus').addEventListener('click', startOrResumeFocus);
+el('pause-focus').addEventListener('click', pauseFocus);
+el('restart-focus').addEventListener('click', restartFocus);
+el('end-focus').addEventListener('click', endFocus);
+el('finish-mark-done').addEventListener('click', finishAndMarkDone);
+el('focus-another').addEventListener('click', startAnotherFocusSession);
+el('return-to-queue').addEventListener('click', returnToQueue);
 el('theme-toggle').addEventListener('click', toggleTheme);
 el('current-energy-input').addEventListener('change', setCurrentEnergy);
 el('pick-another').addEventListener('click', pickAnotherTask);
@@ -589,3 +859,11 @@ document.querySelectorAll('.filter').forEach((button) => {
 
 applyTheme();
 render();
+
+if (focusSession?.status === 'running') {
+  if (getFocusSecondsRemaining() <= 0) {
+    finishFocusSession();
+  } else {
+    beginFocusInterval();
+  }
+}

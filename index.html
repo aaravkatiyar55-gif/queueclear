@@ -121,10 +121,44 @@
             <ul id="why-list"></ul>
           </details>
         </div>
+        <section id="focus-session" class="focus-session" aria-labelledby="focus-title" hidden>
+          <div class="focus-session-heading">
+            <div>
+              <p class="eyebrow">Focus session</p>
+              <h3 id="focus-title">Give this task some room.</h3>
+            </div>
+            <label for="focus-duration">Focus for
+              <select id="focus-duration">
+                <option value="5">5 minutes</option>
+                <option value="10" selected>10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="25">25 minutes</option>
+              </select>
+            </label>
+          </div>
+          <p id="focus-countdown" class="focus-countdown" aria-live="off">10:00</p>
+          <div class="focus-controls" aria-label="Focus session controls">
+            <button id="start-focus" class="primary-button" type="button" disabled>Start focus</button>
+            <button id="pause-focus" class="text-button" type="button" hidden>Pause</button>
+            <button id="restart-focus" class="text-button" type="button" disabled>Restart</button>
+            <button id="end-focus" class="text-button" type="button" disabled>End session</button>
+          </div>
+          <p id="focus-status" class="focus-status" role="status" aria-live="polite">
+            Choose a length when you are ready.
+          </p>
+          <div id="session-finished" class="session-finished" hidden>
+            <p>
+              Session finished. Decide whether the task is done, needs another session, or should
+              return to your queue.
+            </p>
+            <div class="focus-controls">
+              <button id="finish-mark-done" class="primary-button" type="button">Mark done</button>
+              <button id="focus-another" class="text-button" type="button">Start another session</button>
+              <button id="return-to-queue" class="text-button" type="button">Return to queue</button>
+            </div>
+          </div>
+        </section>
         <div class="next-actions">
-          <button id="start-focus" class="primary-button" type="button" disabled>
-            Start 10-minute focus
-          </button>
           <button id="pick-another" class="text-button" type="button" disabled>Pick another</button>
           <details id="snooze-control" class="snooze-control">
             <summary>Snooze</summary>
@@ -137,9 +171,6 @@
           <button id="complete-next" class="text-button" type="button" disabled>Mark done</button>
         </div>
         <p id="next-message" class="next-message" role="status" aria-live="polite"></p>
-        <p id="focus-status" class="focus-status" role="status" aria-live="polite">
-          No timer running.
-        </p>
       </section>
 
       <section class="queue-panel" aria-labelledby="queue-title">
@@ -164,6 +195,6 @@
     </main>
 
     <footer><p>Local-first by design. Your queue stays in this browser.</p></footer>
-    <script src="script.js?v=4"></script>
+    <script src="script.js?v=5"></script>
   </body>
 </html>
