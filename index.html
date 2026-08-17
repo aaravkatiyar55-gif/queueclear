@@ -8,7 +8,7 @@
       content="QueueClear helps students choose one small task to start."
     />
     <title>QueueClear — one task to start</title>
-    <link rel="stylesheet" href="style.css?v=8" />
+    <link rel="stylesheet" href="style.css?v=9" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to tasks</a>
@@ -159,6 +159,10 @@
           <button id="complete-next" class="text-button" type="button" disabled>Mark done</button>
         </div>
         <p id="next-message" class="next-message" role="status" aria-live="polite"></p>
+        <div id="undo-delete" class="undo-delete" hidden>
+          <p id="undo-message" role="status" aria-live="polite"></p>
+          <button id="undo-delete-task" class="text-button" type="button">Undo delete</button>
+        </div>
       </section>
 
       <section class="queue-panel" aria-labelledby="queue-title">
@@ -197,6 +201,6 @@
     </main>
 
     <footer><p>Saved only in this browser.</p></footer>
-    <script src="script.js?v=14"></script>
+    <script src="script.js?v=15"></script>
   </body>
 </html>

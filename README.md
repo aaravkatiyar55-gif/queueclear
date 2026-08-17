@@ -39,7 +39,7 @@ The “Why this task?” note names the part of that rule that decided the curre
 - Compact task context in the queue and clearer context in Start here.
 - Explainable next-task selection with saved energy and time-available preferences.
 - Snooze until tomorrow and Wake now controls.
-- Mark done and delete actions.
+- Mark done and delete actions, with an Undo path for the most recent deletion until refresh.
 - A 10-minute focus timer with Start, Pause, Resume, and Reset controls.
 - The focus timer names the task it is currently for.
 - Local JSON backup download and restore for QueueClear tasks and supported preferences.
@@ -88,6 +88,7 @@ Checks completed for the current app include:
 - timer start, pause, resume, reset, and refresh reset behavior;
 - backup-download status after the local JSON action;
 - backup preview, invalid-backup rejection, cancellation, and confirmed local restore;
+- delete and undo-delete behavior, including restoring the task to its earlier list position;
 - keyboard focus on the skip link and keyboard use of the context disclosure;
 - 320px, 360px, 768px, and 1280px checks with no horizontal page overflow.
 
@@ -95,6 +96,7 @@ Checks completed for the current app include:
 
 - Data stays in one browser; there is no account or device sync.
 - Restore replaces current QueueClear data in one browser; it is not cloud or device sync.
+- Undo only remembers the most recently deleted task and resets after a browser refresh.
 - The timer intentionally resets after a browser refresh.
 - There are no notifications, calendar connections, or cloud backups.
 - QueueClear is not a medical or clinical productivity tool.

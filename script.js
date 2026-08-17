@@ -16,6 +16,7 @@ let focusTimer = null;
 let focusSeconds = 600;
 let focusTaskId = null;
 let pendingRestore = null;
+let lastDeletedTask = null;
 const statusTimers = {};
 
 const el = (id) => document.getElementById(id);
@@ -432,6 +433,7 @@ function restoreBackup() {
   focusTimer = null;
   focusSeconds = 600;
   focusTaskId = null;
+  lastDeletedTask = null;
   clearRestorePreview();
   applyTheme();
   render();
@@ -593,10 +595,23 @@ function renderTaskList() {
   el('empty-state').hidden = tasks.length > 0;
 }
 
+function renderUndoDelete() {
+  const undoPanel = el('undo-delete');
+
+  if (!lastDeletedTask) {
+    undoPanel.hidden = true;
+    return;
+  }
+
+  el('undo-message').textContent = 'Deleted “' + lastDeletedTask.task.text + '”.';
+  undoPanel.hidden = false;
+}
+
 function render() {
   renderSuggestion();
   renderTaskList();
   renderTimer();
+  renderUndoDelete();
 }
 
 function hasDuplicateActiveTitle(text) {
@@ -683,14 +698,47 @@ function markSuggestedTaskDone() {
 }
 
 function deleteTask(taskId) {
+  const deletedIndex = tasks.findIndex((task) => task.id === taskId);
+  if (deletedIndex === -1) {
+    return;
+  }
+
+  const deletedTask = tasks[deletedIndex];
+
   if (taskId === focusTaskId) {
     stopFocus('Timer reset because its task was deleted.');
   }
 
   tasks = tasks.filter((task) => task.id !== taskId);
+  lastDeletedTask = {
+    index: deletedIndex,
+    task: deletedTask,
+  };
   saveTasks();
   render();
-  showNextStatus('Task deleted.');
+  showNextStatus('Task deleted. Undo stays available until you refresh or delete another task.');
+  el('undo-delete-task').focus();
+}
+
+function undoLastDelete() {
+  if (!lastDeletedTask) {
+    return;
+  }
+
+  if (tasks.some((task) => task.id === lastDeletedTask.task.id)) {
+    lastDeletedTask = null;
+    renderUndoDelete();
+    showNextStatus('That task is already back in your list.');
+    return;
+  }
+
+  const restoreIndex = Math.min(Math.max(lastDeletedTask.index, 0), tasks.length);
+  const restoredTask = lastDeletedTask.task;
+  tasks.splice(restoreIndex, 0, restoredTask);
+  lastDeletedTask = null;
+  saveTasks();
+  render();
+  showNextStatus('Restored “' + restoredTask.text + '”.');
 }
 
 function getTomorrowMorning() {
@@ -872,6 +920,7 @@ el('pause-focus').addEventListener('click', pauseFocus);
 el('reset-focus').addEventListener('click', () => stopFocus('Timer reset.'));
 el('snooze-task').addEventListener('click', snoozeSuggestedTask);
 el('complete-next').addEventListener('click', markSuggestedTaskDone);
+el('undo-delete-task').addEventListener('click', undoLastDelete);
 el('theme-toggle').addEventListener('click', toggleTheme);
 
 applyTheme();
