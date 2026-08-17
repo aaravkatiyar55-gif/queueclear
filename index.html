@@ -102,13 +102,41 @@
       <section class="next-card" aria-labelledby="next-title">
         <div class="next-meta"><span class="status-dot" aria-hidden="true"></span><p>RIGHT NOW</p></div>
         <h2 id="next-title">Your next action</h2>
+        <div class="current-energy">
+          <label for="current-energy-input">How are you feeling for this task?</label>
+          <select id="current-energy-input">
+            <option value="low">Low energy</option>
+            <option value="medium" selected>Medium energy</option>
+            <option value="high">High energy</option>
+          </select>
+        </div>
         <p id="next-task" class="next-task">Add one task to begin.</p>
+        <div id="next-details" class="next-details" hidden>
+          <p id="next-energy" class="next-detail"></p>
+          <p id="next-time" class="next-detail"></p>
+          <p id="next-first-step" class="next-detail" hidden></p>
+          <p id="next-due-date" class="next-detail" hidden></p>
+          <details class="why-task">
+            <summary>Why this task?</summary>
+            <ul id="why-list"></ul>
+          </details>
+        </div>
         <div class="next-actions">
           <button id="start-focus" class="primary-button" type="button" disabled>
             Start 10-minute focus
           </button>
+          <button id="pick-another" class="text-button" type="button" disabled>Pick another</button>
+          <details id="snooze-control" class="snooze-control">
+            <summary>Snooze</summary>
+            <div class="snooze-options" aria-label="Snooze choices">
+              <button type="button" data-snooze="later-today">Later today</button>
+              <button type="button" data-snooze="tomorrow">Tomorrow</button>
+              <button type="button" data-snooze="next-week">Next week</button>
+            </div>
+          </details>
           <button id="complete-next" class="text-button" type="button" disabled>Mark done</button>
         </div>
+        <p id="next-message" class="next-message" role="status" aria-live="polite"></p>
         <p id="focus-status" class="focus-status" role="status" aria-live="polite">
           No timer running.
         </p>
