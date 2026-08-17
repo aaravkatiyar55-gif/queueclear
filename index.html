@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="QueueClear turns an overwhelming task list into one clear next action." />
+    <title>QueueClear — One clear next step</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to workspace</a>
+    <header class="site-header">
+      <a class="brand" href="#main" aria-label="QueueClear home"><span class="brand-mark">↳</span>QueueClear</a>
+      <button class="quiet-button" id="theme-toggle" type="button" aria-pressed="false">Use calm theme</button>
+    </header>
+    <main id="main" class="workspace">
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">A little less friction</p>
+        <h1 id="page-title">Pick the next <em>doable</em> thing.</h1>
+        <p>Capture the messy list, then let QueueClear surface one small action you can actually start.</p>
+      </section>
+      <section class="capture-panel" aria-labelledby="capture-title">
+        <div><p class="eyebrow">Capture</p><h2 id="capture-title">What is pulling at your attention?</h2></div>
+        <form id="task-form" class="task-form">
+          <label class="sr-only" for="task-input">New task</label>
+          <input id="task-input" maxlength="110" autocomplete="off" placeholder="e.g. Finish the maths worksheet" required />
+          <select id="energy-input" aria-label="Energy needed">
+            <option value="low">Low energy</option>
+            <option value="medium" selected>Medium energy</option>
+            <option value="high">High energy</option>
+          </select>
+          <button class="primary-button" type="submit">Add to queue</button>
+        </form>
+        <p id="form-message" class="form-message" role="status" aria-live="polite"></p>
+      </section>
+      <section class="next-card" aria-labelledby="next-title">
+        <div class="next-meta"><span class="status-dot" aria-hidden="true"></span><p>RIGHT NOW</p></div>
+        <h2 id="next-title">Your next action</h2>
+        <p id="next-task" class="next-task">Add one task to begin.</p>
+        <div class="next-actions">
+          <button id="start-focus" class="primary-button" type="button" disabled>Start 10-minute focus</button>
+          <button id="complete-next" class="text-button" type="button" disabled>Mark done</button>
+        </div>
+        <p id="focus-status" class="focus-status" role="status" aria-live="polite">No timer running.</p>
+      </section>
+      <section class="queue-panel" aria-labelledby="queue-title">
+        <div class="section-heading"><div><p class="eyebrow">Your queue</p><h2 id="queue-title">Everything else can wait here.</h2></div><button id="clear-done" class="text-button" type="button">Clear completed</button></div>
+        <div class="filters" role="group" aria-label="Task filters">
+          <button class="filter is-active" type="button" data-filter="all" aria-pressed="true">All</button>
+          <button class="filter" type="button" data-filter="low" aria-pressed="false">Low energy</button>
+          <button class="filter" type="button" data-filter="medium" aria-pressed="false">Medium</button>
+          <button class="filter" type="button" data-filter="high" aria-pressed="false">High</button>
+        </div>
+        <ul id="task-list" class="task-list" aria-live="polite"></ul>
+        <p id="empty-state" class="empty-state">Your queue is clear. Add a small task when something comes up.</p>
+      </section>
+    </main>
+    <footer><p>Local-first by design. Your queue stays in this browser.</p></footer>
+    <script src="script.js"></script>
+  </body>
+</html>
