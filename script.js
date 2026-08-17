@@ -239,6 +239,47 @@ function formatAvailableTime(minutes) {
   return minutes + ' minutes';
 }
 
+function getThemePreference() {
+  return localStorage.getItem(themeKey) === 'calm' ? 'calm' : 'paper';
+}
+
+function getBackupFileName(date = new Date()) {
+  const datePart = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  return 'queueclear-backup-' + datePart + '.json';
+}
+
+function buildBackup() {
+  return {
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    tasks,
+    theme: getThemePreference(),
+    currentEnergy,
+    timeAvailable,
+  };
+}
+
+function downloadBackup() {
+  const backupFile = new Blob([JSON.stringify(buildBackup(), null, 2)], {
+    type: 'application/json',
+  });
+  const downloadUrl = URL.createObjectURL(backupFile);
+  const downloadLink = document.createElement('a');
+
+  downloadLink.href = downloadUrl;
+  downloadLink.download = getBackupFileName();
+  document.body.append(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+  showStatus('data-message', 'Backup downloaded.');
+}
+
 function getTaskContext(task, { longEstimate = false, includeFirstStep = true } = {}) {
   const details = [];
 
@@ -647,7 +688,7 @@ function setTimeAvailable() {
 }
 
 function applyTheme() {
-  const isCalm = localStorage.getItem(themeKey) === 'calm';
+  const isCalm = getThemePreference() === 'calm';
   document.body.classList.toggle('calm', isCalm);
   el('theme-toggle').setAttribute('aria-pressed', String(isCalm));
   el('theme-toggle').textContent = isCalm ? 'Use paper theme' : 'Use calm theme';
@@ -662,6 +703,7 @@ function toggleTheme() {
 el('task-form').addEventListener('submit', handleTaskSubmit);
 el('current-energy-input').addEventListener('change', setCurrentEnergy);
 el('time-available-input').addEventListener('change', setTimeAvailable);
+el('download-backup').addEventListener('click', downloadBackup);
 el('start-focus').addEventListener('click', startFocus);
 el('pause-focus').addEventListener('click', pauseFocus);
 el('reset-focus').addEventListener('click', () => stopFocus('Timer reset.'));
