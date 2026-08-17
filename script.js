@@ -194,7 +194,6 @@ function renderSuggestion() {
       ? 'Nothing is ready right now. Wake a snoozed task when you are ready.'
       : 'Add a task when something comes up.';
     el('next-details').hidden = true;
-    el('start-focus').disabled = true;
     el('snooze-task').disabled = true;
     el('complete-next').disabled = true;
     return;
@@ -213,7 +212,6 @@ function renderSuggestion() {
     : '';
   el('why-task').textContent = getSuggestionReason(suggestion);
   el('next-details').hidden = false;
-  el('start-focus').disabled = focusTimer !== null;
   el('snooze-task').disabled = false;
   el('complete-next').disabled = false;
 }
@@ -295,6 +293,7 @@ function renderTaskList() {
 function render() {
   renderSuggestion();
   renderTaskList();
+  renderTimer();
 }
 
 function hasDuplicateActiveTitle(text) {
@@ -352,7 +351,7 @@ function toggleTaskDone(taskId) {
   task.completedAt = task.done ? Date.now() : null;
 
   if (task.id === focusTaskId && task.done) {
-    stopFocus();
+    stopFocus('Timer reset because the task was marked done.');
   }
 
   saveTasks();
@@ -369,7 +368,7 @@ function markSuggestedTaskDone() {
   task.completedAt = Date.now();
 
   if (task.id === focusTaskId) {
-    stopFocus();
+    stopFocus('Timer reset because the task was marked done.');
   }
 
   saveTasks();
@@ -379,7 +378,7 @@ function markSuggestedTaskDone() {
 
 function deleteTask(taskId) {
   if (taskId === focusTaskId) {
-    stopFocus();
+    stopFocus('Timer reset because its task was deleted.');
   }
 
   tasks = tasks.filter((task) => task.id !== taskId);
@@ -404,7 +403,7 @@ function snoozeSuggestedTask() {
   task.snoozedUntil = getTomorrowMorning();
 
   if (task.id === focusTaskId) {
-    stopFocus();
+    stopFocus('Timer reset because this task was snoozed.');
   }
 
   saveTasks();
@@ -424,46 +423,84 @@ function wakeTask(taskId) {
   showNextStatus('Back in your list.');
 }
 
-function updateFocusStatus() {
-  el('focus-status').textContent = 'Focus session: ' + formatFocusTime(focusSeconds) + ' remaining.';
+function setFocusStatus(message) {
+  el('focus-status').textContent = message;
+}
+
+function getFocusTask() {
+  return focusTaskId
+    ? tasks.find((task) => task.id === focusTaskId && !task.done) || null
+    : null;
+}
+
+function renderTimer() {
+  const suggestedTask = getSuggestedTask();
+  const focusTask = getFocusTask();
+  const canResume = Boolean(focusTask && focusSeconds > 0 && focusSeconds < 600);
+
+  el('timer-display').textContent = formatFocusTime(focusSeconds);
+  el('start-focus').disabled = focusTimer !== null || (!suggestedTask && !focusTask);
+  el('start-focus').textContent = canResume ? 'Resume focus' : 'Start 10-minute focus';
+  el('pause-focus').disabled = focusTimer === null;
+  el('reset-focus').disabled = focusTimer === null && focusSeconds === 600;
+}
+
+function tickFocus() {
+  focusSeconds -= 1;
+
+  if (focusSeconds <= 0) {
+    clearInterval(focusTimer);
+    focusTimer = null;
+    focusTaskId = null;
+    focusSeconds = 0;
+    renderTimer();
+    setFocusStatus('Focus session finished. Decide what to do next.');
+    showNextStatus('You can mark the task done or leave it in your list.');
+    return;
+  }
+
+  renderTimer();
 }
 
 function startFocus() {
-  const task = getSuggestedTask();
+  if (focusTimer !== null) {
+    return;
+  }
+
+  const task = getFocusTask() || getSuggestedTask();
   if (!task) {
     return;
   }
 
-  clearInterval(focusTimer);
+  if (focusSeconds <= 0) {
+    focusSeconds = 600;
+  }
+
   focusTaskId = task.id;
-  focusSeconds = 600;
-  updateFocusStatus();
-  el('start-focus').disabled = true;
-  el('start-focus').textContent = 'Focus running';
+  focusTimer = setInterval(tickFocus, 1000);
+  renderTimer();
+  setFocusStatus('Focus started.');
   showNextStatus('Focus started.');
-
-  focusTimer = setInterval(() => {
-    focusSeconds -= 1;
-
-    if (focusSeconds <= 0) {
-      stopFocus();
-      el('focus-status').textContent = 'Focus session finished. Decide what to do next.';
-      showNextStatus('You can mark the task done or leave it in your list.');
-      return;
-    }
-
-    updateFocusStatus();
-  }, 1000);
 }
 
-function stopFocus() {
+function pauseFocus() {
+  if (focusTimer === null) {
+    return;
+  }
+
+  clearInterval(focusTimer);
+  focusTimer = null;
+  renderTimer();
+  setFocusStatus('Focus paused.');
+}
+
+function stopFocus(message) {
   clearInterval(focusTimer);
   focusTimer = null;
   focusSeconds = 600;
   focusTaskId = null;
-  el('start-focus').textContent = 'Start 10-minute focus';
-  el('start-focus').disabled = !getSuggestedTask();
-  el('focus-status').textContent = 'No timer running.';
+  renderTimer();
+  setFocusStatus(message || 'Timer reset.');
 }
 
 function setCurrentEnergy() {
@@ -489,6 +526,8 @@ function toggleTheme() {
 el('task-form').addEventListener('submit', handleTaskSubmit);
 el('current-energy-input').addEventListener('change', setCurrentEnergy);
 el('start-focus').addEventListener('click', startFocus);
+el('pause-focus').addEventListener('click', pauseFocus);
+el('reset-focus').addEventListener('click', () => stopFocus('Timer reset.'));
 el('snooze-task').addEventListener('click', snoozeSuggestedTask);
 el('complete-next').addEventListener('click', markSuggestedTaskDone);
 el('theme-toggle').addEventListener('click', toggleTheme);

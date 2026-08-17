@@ -299,6 +299,43 @@ summary {
   margin-top: 12px;
 }
 
+.focus-timer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin: 18px 0 14px;
+  padding: 12px 0;
+  border-top: 1px solid #5c7771;
+  border-bottom: 1px solid #5c7771;
+}
+
+.focus-timer h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.timer-display {
+  margin: 3px 0 0;
+  color: #fffdf8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.55rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.timer-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.focus-timer .focus-status {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .task-list {
   margin: 0;
   padding: 0;
@@ -452,6 +489,20 @@ body.calm {
   }
 
   .next-actions > * {
+    width: 100%;
+    text-align: left;
+  }
+
+  .focus-timer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .timer-controls {
+    flex-direction: column;
+  }
+
+  .timer-controls > * {
     width: 100%;
     text-align: left;
   }

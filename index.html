@@ -8,7 +8,7 @@
       content="QueueClear helps students choose one small task to start."
     />
     <title>QueueClear — one task to start</title>
-    <link rel="stylesheet" href="style.css?v=4" />
+    <link rel="stylesheet" href="style.css?v=5" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to tasks</a>
@@ -111,17 +111,30 @@
           </details>
         </div>
 
+        <section class="focus-timer" aria-labelledby="timer-title">
+          <div>
+            <h3 id="timer-title">Focus for 10 minutes</h3>
+            <p id="timer-display" class="timer-display" aria-live="off">10:00</p>
+          </div>
+          <div class="timer-controls" role="group" aria-label="Focus timer controls">
+            <button id="start-focus" class="primary-button" type="button" disabled>
+              Start 10-minute focus
+            </button>
+            <button id="pause-focus" class="text-button" type="button" disabled>Pause</button>
+            <button id="reset-focus" class="text-button" type="button" disabled>Reset</button>
+          </div>
+          <p id="focus-status" class="focus-status" role="status" aria-live="polite">
+            Timer resets if you refresh the page.
+          </p>
+        </section>
+
         <div class="next-actions">
-          <button id="start-focus" class="primary-button" type="button" disabled>
-            Start 10-minute focus
-          </button>
           <button id="snooze-task" class="text-button" type="button" disabled>
             Snooze until tomorrow
           </button>
           <button id="complete-next" class="text-button" type="button" disabled>Mark done</button>
         </div>
         <p id="next-message" class="next-message" role="status" aria-live="polite"></p>
-        <p id="focus-status" class="focus-status" aria-live="off">No timer running.</p>
       </section>
 
       <section class="queue-panel" aria-labelledby="queue-title">
@@ -133,6 +146,6 @@
     </main>
 
     <footer><p>Saved only in this browser.</p></footer>
-    <script src="script.js?v=10"></script>
+    <script src="script.js?v=11"></script>
   </body>
 </html>
