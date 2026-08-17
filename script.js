@@ -11,12 +11,15 @@ const maxFirstStepLength = 180;
 
 let tasks = readTasks();
 let filter = 'all';
+let sortOption = 'suggested';
 let focusTimer = null;
 let currentEnergy = readCurrentEnergy();
 let selectedTaskId = null;
 let focusSession = readFocusSession();
 let focusFinishedTaskId = null;
 let lastSuggestedFocusTaskId = null;
+let editingTaskId = null;
+let undoAction = null;
 const defaultDocumentTitle = document.title;
 
 const el = (id) => document.getElementById(id);
@@ -427,22 +430,276 @@ function createActionButton(label, className, ariaLabel) {
   return button;
 }
 
+function isTaskVisible(task) {
+  if (filter === 'all') {
+    return true;
+  }
+
+  if (filter === 'active') {
+    return !task.done;
+  }
+
+  if (filter === 'completed') {
+    return task.done;
+  }
+
+  if (filter === 'due-today') {
+    return !task.done && getDueStatus(task) === 'today';
+  }
+
+  if (filter === 'snoozed') {
+    return !task.done && isSnoozed(task);
+  }
+
+  return task.energy === filter;
+}
+
+function compareSuggestedTasks(first, second) {
+  const firstGroup = first.done ? 2 : isSnoozed(first) ? 1 : 0;
+  const secondGroup = second.done ? 2 : isSnoozed(second) ? 1 : 0;
+
+  if (firstGroup !== secondGroup) {
+    return firstGroup - secondGroup;
+  }
+
+  const firstSelection = getTaskSelection(first);
+  const secondSelection = getTaskSelection(second);
+
+  if (firstSelection.score !== secondSelection.score) {
+    return secondSelection.score - firstSelection.score;
+  }
+
+  return first.createdAt - second.createdAt || first.id.localeCompare(second.id);
+}
+
+function getDueSortValue(task) {
+  return task.dueDate ? new Date(task.dueDate + 'T12:00:00').getTime() : Number.POSITIVE_INFINITY;
+}
+
+function sortTasks(taskList) {
+  return taskList.slice().sort((first, second) => {
+    if (sortOption === 'newest') {
+      return second.createdAt - first.createdAt || second.id.localeCompare(first.id);
+    }
+
+    if (sortOption === 'oldest') {
+      return first.createdAt - second.createdAt || first.id.localeCompare(second.id);
+    }
+
+    if (sortOption === 'shortest') {
+      const firstEstimate = first.estimatedMinutes ?? Number.POSITIVE_INFINITY;
+      const secondEstimate = second.estimatedMinutes ?? Number.POSITIVE_INFINITY;
+      return firstEstimate - secondEstimate || first.createdAt - second.createdAt;
+    }
+
+    if (sortOption === 'due-soon') {
+      return getDueSortValue(first) - getDueSortValue(second) || first.createdAt - second.createdAt;
+    }
+
+    return compareSuggestedTasks(first, second);
+  });
+}
+
+function getVisibleTasks() {
+  return sortTasks(tasks.filter(isTaskVisible));
+}
+
+function cloneTask(task) {
+  return { ...task };
+}
+
+function showQueueStatus(message) {
+  el('queue-message').textContent = message;
+}
+
+function renderUndo() {
+  const undoBar = el('undo-bar');
+  undoBar.hidden = !undoAction;
+
+  if (undoAction) {
+    el('undo-message').textContent = undoAction.message;
+  }
+}
+
+function setUndo(action) {
+  undoAction = action;
+  renderUndo();
+}
+
+function clearUndo(message) {
+  undoAction = null;
+  renderUndo();
+
+  if (message) {
+    showQueueStatus(message);
+  }
+}
+
+function focusTaskControl(taskId, control) {
+  requestAnimationFrame(() => el(control + '-' + taskId)?.focus());
+}
+
+function createEditField(labelText, control) {
+  const field = document.createElement('div');
+  const label = document.createElement('label');
+  label.htmlFor = control.id;
+  label.textContent = labelText;
+  field.className = 'field';
+  field.append(label, control);
+  return field;
+}
+
+function createEditSelect(id, options, selectedValue) {
+  const select = document.createElement('select');
+  select.id = id;
+
+  options.forEach(({ value, label }) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    option.selected = String(value) === String(selectedValue);
+    select.append(option);
+  });
+
+  return select;
+}
+
+function createTaskEditForm(task) {
+  const form = document.createElement('form');
+  const titleInput = document.createElement('input');
+  const firstStepInput = document.createElement('input');
+  const dueDateInput = document.createElement('input');
+  const saveButton = document.createElement('button');
+  const cancelButton = document.createElement('button');
+  const energyInput = createEditSelect(
+    'edit-energy-' + task.id,
+    energyLevels.map((energy) => ({ value: energy, label: formatEnergy(energy) })),
+    task.energy,
+  );
+  const estimatedMinutesInput = createEditSelect(
+    'edit-estimated-minutes-' + task.id,
+    [{ value: '', label: 'No estimate yet' }].concat(
+      estimateOptions.map((minutes) => ({ value: minutes, label: minutes + ' minutes' })),
+    ),
+    task.estimatedMinutes ?? '',
+  );
+
+  form.className = 'task-edit-form';
+  form.noValidate = true;
+
+  titleInput.id = 'edit-title-' + task.id;
+  titleInput.value = task.text;
+  titleInput.maxLength = maxTitleLength;
+  titleInput.required = true;
+
+  firstStepInput.id = 'edit-first-step-' + task.id;
+  firstStepInput.value = task.firstStep || '';
+  firstStepInput.maxLength = maxFirstStepLength;
+
+  dueDateInput.id = 'edit-due-date-' + task.id;
+  dueDateInput.type = 'date';
+  dueDateInput.value = task.dueDate || '';
+
+  saveButton.type = 'submit';
+  saveButton.className = 'primary-button';
+  saveButton.textContent = 'Save';
+
+  cancelButton.type = 'button';
+  cancelButton.className = 'text-button';
+  cancelButton.textContent = 'Cancel';
+
+  const actions = document.createElement('div');
+  actions.className = 'task-edit-actions';
+  actions.append(saveButton, cancelButton);
+
+  form.append(
+    createEditField('Task title', titleInput),
+    createEditField('Energy needed', energyInput),
+    createEditField('Estimated time', estimatedMinutesInput),
+    createEditField('First step', firstStepInput),
+    createEditField('Due date', dueDateInput),
+    actions,
+  );
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const text = normalizeWhitespace(titleInput.value);
+
+    if (!text) {
+      showQueueStatus('Add a short task title first.');
+      titleInput.focus();
+      return;
+    }
+
+    if (text.length > maxTitleLength) {
+      showQueueStatus('Keep task titles under ' + maxTitleLength + ' characters.');
+      titleInput.focus();
+      return;
+    }
+
+    if (hasDuplicateActiveTitle(text, task.id)) {
+      showQueueStatus('That task is already in your active queue.');
+      titleInput.focus();
+      return;
+    }
+
+    const updatedTask = normalizeTask({
+      ...task,
+      text,
+      energy: energyInput.value,
+      estimatedMinutes: estimatedMinutesInput.value,
+      firstStep: firstStepInput.value,
+      dueDate: dueDateInput.value,
+    });
+
+    tasks = tasks.map((savedTask) => (savedTask.id === task.id ? updatedTask : savedTask));
+    editingTaskId = null;
+    selectedTaskId = null;
+    saveTasks();
+    clearUndo('Previous undo is no longer available after another action.');
+    render();
+    showQueueStatus('Task updated.');
+    focusTaskControl(task.id, 'edit-task');
+  });
+
+  cancelButton.addEventListener('click', () => {
+    editingTaskId = null;
+    render();
+    showQueueStatus('Edit cancelled. The task was not changed.');
+    focusTaskControl(task.id, 'edit-task');
+  });
+
+  return form;
+}
+
 function renderTaskList() {
-  const visibleTasks = tasks.filter((task) => filter === 'all' || task.energy === filter);
+  const visibleTasks = getVisibleTasks();
   const taskList = el('task-list');
 
   taskList.innerHTML = '';
 
   visibleTasks.forEach((task) => {
     const item = document.createElement('li');
+
+    item.className = 'task-row' + (task.done ? ' is-done' : '');
+
+    if (editingTaskId === task.id) {
+      item.classList.add('is-editing');
+      item.append(createTaskEditForm(task));
+      taskList.append(item);
+      return;
+    }
+
     const checkbox = document.createElement('input');
     const content = document.createElement('div');
     const title = document.createElement('span');
+    const metadata = document.createElement('span');
     const energy = document.createElement('span');
     const actions = document.createElement('div');
     const taskIsSnoozed = isSnoozed(task);
+    const metadataParts = [];
 
-    item.className = 'task-row' + (task.done ? ' is-done' : '');
+    checkbox.id = 'complete-' + task.id;
     checkbox.type = 'checkbox';
     checkbox.checked = task.done;
     checkbox.setAttribute('aria-label', 'Mark ' + task.text + ' complete');
@@ -451,6 +708,21 @@ function renderTaskList() {
     title.className = 'task-text';
     title.textContent = task.text;
     content.append(title);
+
+    if (task.estimatedMinutes) {
+      metadataParts.push(task.estimatedMinutes + ' min');
+    }
+
+    if (task.dueDate) {
+      const dueStatus = getDueStatus(task);
+      metadataParts.push(dueStatus === 'today' ? 'Due today' : 'Due ' + formatDueDate(task.dueDate));
+    }
+
+    if (metadataParts.length > 0) {
+      metadata.className = 'task-meta';
+      metadata.textContent = metadataParts.join(' · ');
+      content.append(metadata);
+    }
 
     if (taskIsSnoozed) {
       const snoozeLabel = document.createElement('span');
@@ -465,37 +737,39 @@ function renderTaskList() {
 
     if (taskIsSnoozed) {
       const wakeButton = createActionButton('Wake now', 'wake-task', 'Wake ' + task.text + ' now');
+      wakeButton.id = 'wake-task-' + task.id;
       wakeButton.addEventListener('click', () => {
         task.snoozedUntil = null;
         selectedTaskId = null;
         saveTasks();
+        clearUndo('Previous undo is no longer available after another action.');
         render();
         showNextStatus('Back in your active queue.');
+        focusTaskControl(task.id, 'wake-task');
       });
       actions.append(wakeButton);
     }
 
-    const deleteButton = createActionButton('Delete', 'delete-task', 'Delete ' + task.text);
-    deleteButton.addEventListener('click', () => {
-      tasks = tasks.filter((savedTask) => savedTask.id !== task.id);
-      selectedTaskId = null;
-      saveTasks();
+    const editButton = createActionButton('Edit', 'edit-task', 'Edit ' + task.text);
+    editButton.id = 'edit-task-' + task.id;
+    editButton.addEventListener('click', () => {
+      editingTaskId = task.id;
       render();
+      requestAnimationFrame(() => el('edit-title-' + task.id)?.focus());
     });
-    actions.append(deleteButton);
 
-    checkbox.addEventListener('change', () => {
-      task.done = !task.done;
-      task.completedAt = task.done ? Date.now() : null;
-      selectedTaskId = null;
-      saveTasks();
-      render();
-    });
+    const deleteButton = createActionButton('Delete', 'delete-task', 'Delete ' + task.text);
+    deleteButton.id = 'delete-task-' + task.id;
+    deleteButton.addEventListener('click', () => deleteTask(task.id));
+    actions.append(editButton, deleteButton);
+
+    checkbox.addEventListener('change', () => setTaskCompletion(task.id, checkbox.checked));
 
     item.append(checkbox, content, energy, actions);
     taskList.append(item);
   });
 
+  renderUndo();
   renderEmptyState(visibleTasks);
 }
 
@@ -555,6 +829,13 @@ function renderNextAction() {
 
 function renderEmptyState(visibleTasks) {
   el('empty-state').hidden = visibleTasks.length > 0;
+
+  if (visibleTasks.length === 0) {
+    el('empty-state').textContent =
+      filter === 'all'
+        ? 'Your queue is clear. Add a small task when something comes up.'
+        : 'No tasks match this view yet.';
+  }
 }
 
 function render() {
@@ -562,9 +843,11 @@ function render() {
   renderTaskList();
 }
 
-function hasDuplicateActiveTitle(text) {
+function hasDuplicateActiveTitle(text, excludedTaskId = null) {
   const comparableTitle = text.toLocaleLowerCase();
-  return getActiveTasks().some((task) => task.text.toLocaleLowerCase() === comparableTitle);
+  return getActiveTasks().some(
+    (task) => task.id !== excludedTaskId && task.text.toLocaleLowerCase() === comparableTitle,
+  );
 }
 
 function clearContextFields() {
@@ -614,6 +897,7 @@ function handleTaskSubmit(event) {
   tasks.push(task);
   selectedTaskId = null;
   saveTasks();
+  clearUndo('Previous undo is no longer available after another action.');
   titleInput.value = '';
   clearContextFields();
   showStatus('Added. Your next action is ready.');
@@ -628,18 +912,106 @@ function completeNextTask() {
     return;
   }
 
-  recommendation.task.done = true;
-  recommendation.task.completedAt = Date.now();
+  setTaskCompletion(recommendation.task.id, true);
+  showNextStatus('Marked done. Another task is ready when you are.');
+}
+
+function clearCompletedTasks() {
+  const completedTasks = tasks.filter((task) => task.done);
+
+  if (completedTasks.length === 0) {
+    showQueueStatus('There are no completed tasks to clear.');
+    return;
+  }
+
+  const previousTasks = tasks.map(cloneTask);
+  tasks = tasks.filter((task) => !task.done);
+  selectedTaskId = null;
+  saveTasks();
+  setUndo({
+    type: 'clear-completed',
+    tasks: previousTasks,
+    message:
+      'Cleared ' +
+      completedTasks.length +
+      ' completed ' +
+      (completedTasks.length === 1 ? 'task' : 'tasks') +
+      '. Undo is available until another action or refresh.',
+  });
+  render();
+  showQueueStatus('Completed tasks cleared.');
+}
+
+function setTaskCompletion(taskId, done) {
+  const task = tasks.find((savedTask) => savedTask.id === taskId);
+
+  if (!task || task.done === done) {
+    return;
+  }
+
+  if (done) {
+    const previousTask = cloneTask(task);
+    task.done = true;
+    task.completedAt = Date.now();
+    setUndo({
+      type: 'complete',
+      task: previousTask,
+      message: 'Marked “' + task.text + '” done. Undo is available until another action or refresh.',
+    });
+  } else {
+    task.done = false;
+    task.completedAt = null;
+    clearUndo('Previous undo is no longer available after another action.');
+  }
+
   selectedTaskId = null;
   saveTasks();
   render();
 }
 
-function clearCompletedTasks() {
-  tasks = tasks.filter((task) => !task.done);
+function deleteTask(taskId) {
+  const taskIndex = tasks.findIndex((task) => task.id === taskId);
+
+  if (taskIndex === -1) {
+    return;
+  }
+
+  const deletedTask = cloneTask(tasks[taskIndex]);
+  tasks = tasks.filter((task) => task.id !== taskId);
   selectedTaskId = null;
+  editingTaskId = null;
+  saveTasks();
+  setUndo({
+    type: 'delete',
+    task: deletedTask,
+    index: taskIndex,
+    message: 'Deleted “' + deletedTask.text + '”. Undo is available until another action or refresh.',
+  });
+  render();
+  showQueueStatus('Task deleted.');
+}
+
+function undoLastAction() {
+  if (!undoAction) {
+    return;
+  }
+
+  const action = undoAction;
+  undoAction = null;
+
+  if (action.type === 'complete') {
+    tasks = tasks.map((task) => (task.id === action.task.id ? cloneTask(action.task) : task));
+  } else if (action.type === 'delete') {
+    tasks.splice(action.index, 0, cloneTask(action.task));
+  } else if (action.type === 'clear-completed') {
+    tasks = action.tasks.map(cloneTask);
+  }
+
+  selectedTaskId = null;
+  editingTaskId = null;
   saveTasks();
   render();
+  showQueueStatus('Restored the last change.');
 }
 
 function setFilter(button) {
@@ -651,6 +1023,11 @@ function setFilter(button) {
     filterButton.setAttribute('aria-pressed', String(isActive));
   });
 
+  render();
+}
+
+function setSortOption() {
+  sortOption = el('sort-input').value;
   render();
 }
 
@@ -713,6 +1090,7 @@ function snoozeCurrentTask(choice) {
   selectedTaskId = null;
   el('snooze-control').open = false;
   saveTasks();
+  clearUndo('Previous undo is no longer available after another action.');
   render();
   showNextStatus(
     'Snoozed until ' +
@@ -838,6 +1216,7 @@ function toggleTheme() {
 el('task-form').addEventListener('submit', handleTaskSubmit);
 el('complete-next').addEventListener('click', completeNextTask);
 el('clear-done').addEventListener('click', clearCompletedTasks);
+el('undo-button').addEventListener('click', undoLastAction);
 el('start-focus').addEventListener('click', startOrResumeFocus);
 el('pause-focus').addEventListener('click', pauseFocus);
 el('restart-focus').addEventListener('click', restartFocus);
@@ -848,6 +1227,7 @@ el('return-to-queue').addEventListener('click', returnToQueue);
 el('theme-toggle').addEventListener('click', toggleTheme);
 el('current-energy-input').addEventListener('change', setCurrentEnergy);
 el('pick-another').addEventListener('click', pickAnotherTask);
+el('sort-input').addEventListener('change', setSortOption);
 
 document.querySelectorAll('[data-snooze]').forEach((button) => {
   button.addEventListener('click', () => snoozeCurrentTask(button.dataset.snooze));

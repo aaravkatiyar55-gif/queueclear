@@ -181,11 +181,34 @@
           </div>
           <button id="clear-done" class="text-button" type="button">Clear completed</button>
         </div>
+        <div class="queue-tools">
+          <div class="field queue-sort">
+            <label for="sort-input">Sort queue</label>
+            <select id="sort-input">
+              <option value="suggested" selected>Suggested order</option>
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="shortest">Shortest first</option>
+              <option value="due-soon">Due soon</option>
+            </select>
+          </div>
+        </div>
         <div class="filters" role="group" aria-label="Task filters">
           <button class="filter is-active" type="button" data-filter="all" aria-pressed="true">All</button>
+          <button class="filter" type="button" data-filter="active" aria-pressed="false">Active</button>
+          <button class="filter" type="button" data-filter="completed" aria-pressed="false">Completed</button>
           <button class="filter" type="button" data-filter="low" aria-pressed="false">Low energy</button>
           <button class="filter" type="button" data-filter="medium" aria-pressed="false">Medium</button>
           <button class="filter" type="button" data-filter="high" aria-pressed="false">High</button>
+          <button class="filter" type="button" data-filter="due-today" aria-pressed="false">Due today</button>
+          <button class="filter" type="button" data-filter="snoozed" aria-pressed="false">Snoozed</button>
+        </div>
+        <p id="queue-message" class="queue-message" role="status" aria-live="polite">
+          Undo is available for your last complete, delete, or clear action until another action or refresh.
+        </p>
+        <div id="undo-bar" class="undo-bar" hidden>
+          <span id="undo-message"></span>
+          <button id="undo-button" class="text-button" type="button">Undo</button>
         </div>
         <ul id="task-list" class="task-list" aria-live="polite"></ul>
         <p id="empty-state" class="empty-state">
@@ -195,6 +218,6 @@
     </main>
 
     <footer><p>Local-first by design. Your queue stays in this browser.</p></footer>
-    <script src="script.js?v=5"></script>
+    <script src="script.js?v=6"></script>
   </body>
 </html>
