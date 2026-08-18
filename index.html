@@ -24,8 +24,8 @@
       <section class="intro" aria-labelledby="page-title">
         <h1 id="page-title">Choose one small task to start.</h1>
         <p>
-          Add the things you need to do, choose how much energy you have, and start with one task
-          that feels realistic.
+          Choose one task that fits your energy and time, move blocked work out of the way, and
+          leave yourself a clear handoff when you pause.
         </p>
       </section>
 
@@ -122,11 +122,32 @@
         <div id="next-details" class="next-details" hidden>
           <p id="next-meta" class="next-detail"></p>
           <p id="next-first-step" class="next-detail" hidden></p>
+          <p id="next-handoff" class="next-detail" hidden></p>
           <details class="why-task">
             <summary>Why this task?</summary>
             <p id="why-task"></p>
           </details>
         </div>
+
+        <section class="waiting-room" aria-labelledby="waiting-title">
+          <h3 id="waiting-title">Waiting on something?</h3>
+          <p>
+            Move a blocked task out of the decision queue until the thing you need is ready.
+          </p>
+          <label for="waiting-on-input">What are you waiting on?</label>
+          <div class="waiting-controls">
+            <input
+              id="waiting-on-input"
+              maxlength="160"
+              autocomplete="off"
+              placeholder="e.g. Teacher's notes before I can revise"
+            />
+            <button id="park-waiting" class="text-button" type="button" disabled>
+              Move to waiting
+            </button>
+          </div>
+          <p id="waiting-message" class="waiting-message" role="status" aria-live="polite"></p>
+        </section>
 
         <section class="focus-timer" aria-labelledby="timer-title">
           <div>
@@ -148,8 +169,25 @@
             <button id="reset-focus" class="text-button" type="button" disabled>Reset</button>
           </div>
           <p id="focus-status" class="focus-status" role="status" aria-live="polite">
-            Timer resets if you refresh the page.
+            Pause to leave a handoff for later. The timer resets if you refresh the page.
           </p>
+        </section>
+
+        <section id="session-handoff" class="session-handoff" aria-labelledby="handoff-title" hidden>
+          <h3 id="handoff-title">Before you switch tasks</h3>
+          <p id="handoff-task" class="timer-task"></p>
+          <label for="handoff-input">What is the next tiny step when you return?</label>
+          <div class="handoff-controls">
+            <input
+              id="handoff-input"
+              maxlength="180"
+              autocomplete="off"
+              placeholder="e.g. Open the notes and answer question 3"
+            />
+            <button id="save-handoff" class="primary-button" type="button">Save handoff</button>
+            <button id="dismiss-handoff" class="text-button" type="button">Not now</button>
+          </div>
+          <p id="handoff-message" class="waiting-message" role="status" aria-live="polite"></p>
         </section>
 
         <div class="next-actions">

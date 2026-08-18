@@ -8,6 +8,8 @@ const estimateOptions = [5, 10, 15, 25, 45, 60];
 const timeAvailableOptions = [5, 15, 25, 45];
 const maxTitleLength = 110;
 const maxFirstStepLength = 180;
+const maxWaitingOnLength = 160;
+const maxHandoffLength = 180;
 
 let tasks = readTasks();
 let currentEnergy = readCurrentEnergy();
@@ -17,6 +19,7 @@ let focusSeconds = 600;
 let focusTaskId = null;
 let pendingRestore = null;
 let lastDeletedTask = null;
+let sessionReviewTaskId = null;
 const statusTimers = {};
 
 const el = (id) => document.getElementById(id);
@@ -45,6 +48,9 @@ function normalizeTask(candidate) {
     createdAt: normalizeTimestamp(candidate.createdAt) ?? Date.now(),
     estimatedMinutes: estimateOptions.includes(estimatedMinutes) ? estimatedMinutes : null,
     firstStep: normalizeWhitespace(candidate.firstStep).slice(0, maxFirstStepLength) || null,
+    waitingOn: normalizeWhitespace(candidate.waitingOn).slice(0, maxWaitingOnLength) || null,
+    handoff: normalizeWhitespace(candidate.handoff).slice(0, maxHandoffLength) || null,
+    handoffAt: normalizeTimestamp(candidate.handoffAt),
     snoozedUntil: normalizeTimestamp(candidate.snoozedUntil),
     completedAt: normalizeTimestamp(candidate.completedAt),
     // Older tasks may include a date. QueueClear no longer uses it to rank tasks.
@@ -95,6 +101,9 @@ function createTask({ text, energy, estimatedMinutes, firstStep }) {
     createdAt: Date.now(),
     estimatedMinutes,
     firstStep,
+    waitingOn: null,
+    handoff: null,
+    handoffAt: null,
     snoozedUntil: null,
     completedAt: null,
   });
@@ -109,7 +118,15 @@ function isSnoozed(task, now = Date.now()) {
 }
 
 function getAvailableTasks() {
-  return getActiveTasks().filter((task) => !isSnoozed(task));
+  return getActiveTasks().filter((task) => !isSnoozed(task) && !isWaiting(task));
+}
+
+function isWaiting(task) {
+  return Boolean(task.waitingOn);
+}
+
+function getWaitingTasks() {
+  return getActiveTasks().filter(isWaiting);
 }
 
 function compareByEstimateThenQueueOrder(first, second) {
@@ -434,6 +451,7 @@ function restoreBackup() {
   focusSeconds = 600;
   focusTaskId = null;
   lastDeletedTask = null;
+  sessionReviewTaskId = null;
   clearRestorePreview();
   applyTheme();
   render();
@@ -501,8 +519,11 @@ function renderSuggestion() {
   el('time-available-input').value = timeAvailable === null ? '' : String(timeAvailable);
 
   if (!suggestion) {
+    const waitingCount = getWaitingTasks().length;
     el('next-task').textContent = hasActiveTasks
-      ? 'Everything active is snoozed. Wake a task below if your plans changed; otherwise it returns tomorrow.'
+      ? waitingCount > 0
+        ? 'Nothing is ready to start. Make a waiting task ready below when the blocker is gone.'
+        : 'Everything active is snoozed. Wake a task below if your plans changed; otherwise it returns tomorrow.'
       : 'Your queue is clear. Add one small task above.';
     el('next-details').hidden = true;
     el('snooze-task').disabled = true;
@@ -521,6 +542,10 @@ function renderSuggestion() {
   el('next-first-step').textContent = suggestion.firstStep
     ? 'First step: ' + suggestion.firstStep
     : 'No first step saved. Begin with the smallest visible part.';
+  el('next-handoff').hidden = !suggestion.handoff;
+  el('next-handoff').textContent = suggestion.handoff
+    ? 'Last handoff: ' + suggestion.handoff
+    : '';
   el('why-task').textContent = getSuggestionReason(recommendation);
   el('next-details').hidden = false;
   el('snooze-task').disabled = false;
@@ -574,6 +599,13 @@ function renderTaskList() {
       content.append(snoozeLabel);
     }
 
+    if (isWaiting(task)) {
+      const waitingLabel = document.createElement('span');
+      waitingLabel.className = 'waiting-label';
+      waitingLabel.textContent = 'Waiting on: ' + task.waitingOn;
+      content.append(waitingLabel);
+    }
+
     energy.className = 'energy-tag';
     energy.textContent = formatEnergy(task.energy);
     actions.className = 'task-actions';
@@ -582,6 +614,16 @@ function renderTaskList() {
       const wakeButton = createTaskButton('Wake now', 'wake-task', 'Wake ' + task.text + ' now');
       wakeButton.addEventListener('click', () => wakeTask(task.id));
       actions.append(wakeButton);
+    }
+
+    if (isWaiting(task)) {
+      const readyButton = createTaskButton(
+        'Make ready',
+        'make-ready-task',
+        'Make ' + task.text + ' ready to choose',
+      );
+      readyButton.addEventListener('click', () => makeTaskReady(task.id));
+      actions.append(readyButton);
     }
 
     const deleteButton = createTaskButton('Delete', 'delete-task', 'Delete ' + task.text);
@@ -609,9 +651,114 @@ function renderUndoDelete() {
 
 function render() {
   renderSuggestion();
+  renderWaitingRoom();
   renderTaskList();
   renderTimer();
   renderUndoDelete();
+  renderSessionHandoff();
+}
+
+function renderWaitingRoom() {
+  const suggestion = getSuggestedTask();
+  el('park-waiting').disabled = !suggestion;
+  el('waiting-on-input').disabled = !suggestion;
+
+  if (!suggestion) {
+    el('waiting-on-input').value = '';
+    el('waiting-on-input').placeholder = 'Choose a ready task before moving one to waiting';
+    return;
+  }
+
+  el('waiting-on-input').placeholder = "e.g. Teacher's notes before I can revise";
+}
+
+function parkSuggestedTask() {
+  const task = getSuggestedTask();
+  const waitingOn = normalizeWhitespace(el('waiting-on-input').value).slice(0, maxWaitingOnLength);
+
+  if (!task) {
+    showStatus('waiting-message', 'Choose a ready task first.');
+    return;
+  }
+
+  if (!waitingOn) {
+    showStatus('waiting-message', 'Say what needs to happen before this task can be started.');
+    el('waiting-on-input').focus();
+    return;
+  }
+
+  task.waitingOn = waitingOn;
+  if (task.id === sessionReviewTaskId) {
+    sessionReviewTaskId = null;
+  }
+  saveTasks();
+  el('waiting-on-input').value = '';
+  render();
+  showNextStatus('Moved to waiting so it will not compete for your attention right now.');
+}
+
+function makeTaskReady(taskId) {
+  const task = tasks.find((savedTask) => savedTask.id === taskId);
+  if (!task) {
+    return;
+  }
+
+  task.waitingOn = null;
+  saveTasks();
+  render();
+  showNextStatus('Back in your ready queue.');
+}
+
+function getSessionReviewTask() {
+  return sessionReviewTaskId
+    ? tasks.find((task) => task.id === sessionReviewTaskId && !task.done) || null
+    : null;
+}
+
+function renderSessionHandoff() {
+  const task = getSessionReviewTask();
+  const handoffPanel = el('session-handoff');
+
+  if (!task) {
+    handoffPanel.hidden = true;
+    return;
+  }
+
+  el('handoff-task').textContent = 'You just focused on: ' + task.text;
+  el('handoff-input').value = task.handoff || '';
+  handoffPanel.hidden = false;
+}
+
+function saveSessionHandoff() {
+  const task = getSessionReviewTask();
+  const handoff = normalizeWhitespace(el('handoff-input').value).slice(0, maxHandoffLength);
+
+  if (!task) {
+    return;
+  }
+
+  if (!handoff) {
+    showStatus('handoff-message', 'Save one small next step or choose Not now.');
+    el('handoff-input').focus();
+    return;
+  }
+
+  task.handoff = handoff;
+  task.handoffAt = Date.now();
+  sessionReviewTaskId = null;
+  saveTasks();
+  render();
+  showNextStatus('Handoff saved. Your next tiny step will be here when you return.');
+}
+
+function dismissSessionHandoff() {
+  if (!getSessionReviewTask()) {
+    return;
+  }
+
+  sessionReviewTaskId = null;
+  render();
+  showNextStatus('No handoff saved. The task stays in your ready queue.');
 }
 
 function hasDuplicateActiveTitle(text) {
@@ -672,6 +819,10 @@ function toggleTaskDone(taskId) {
     stopFocus('Timer reset because the task was marked done.');
   }
 
+  if (task.id === sessionReviewTaskId && task.done) {
+    sessionReviewTaskId = null;
+  }
+
   saveTasks();
   render();
   showNextStatus(
@@ -692,6 +843,10 @@ function markSuggestedTaskDone() {
     stopFocus('Timer reset because the task was marked done.');
   }
 
+  if (task.id === sessionReviewTaskId) {
+    sessionReviewTaskId = null;
+  }
+
   saveTasks();
   render();
   showNextStatus('Marked done. It moved out of your active queue.');
@@ -707,6 +862,10 @@ function deleteTask(taskId) {
 
   if (taskId === focusTaskId) {
     stopFocus('Timer reset because its task was deleted.');
+  }
+
+  if (taskId === sessionReviewTaskId) {
+    sessionReviewTaskId = null;
   }
 
   tasks = tasks.filter((task) => task.id !== taskId);
@@ -758,6 +917,10 @@ function snoozeSuggestedTask() {
 
   if (task.id === focusTaskId) {
     stopFocus('Timer reset because this task was snoozed.');
+  }
+
+  if (task.id === sessionReviewTaskId) {
+    sessionReviewTaskId = null;
   }
 
   saveTasks();
@@ -822,7 +985,9 @@ function tickFocus() {
     focusTimer = null;
     focusTaskId = null;
     focusSeconds = 0;
+    sessionReviewTaskId = completedTask ? completedTask.id : null;
     renderTimer();
+    renderSessionHandoff();
     setFocusStatus(
       completedTask
         ? 'Focus session finished for ' + completedTask.text + '. Decide whether it is done or needs another session.'
@@ -863,6 +1028,8 @@ function pauseFocus() {
   focusTimer = null;
   renderTimer();
   const focusTask = getFocusTask();
+  sessionReviewTaskId = focusTask ? focusTask.id : null;
+  renderSessionHandoff();
   setFocusStatus(focusTask ? 'Focus paused for ' + focusTask.text + '.' : 'Focus paused.');
 }
 
@@ -871,7 +1038,9 @@ function stopFocus(message) {
   focusTimer = null;
   focusSeconds = 600;
   focusTaskId = null;
+  sessionReviewTaskId = null;
   renderTimer();
+  renderSessionHandoff();
   setFocusStatus(message || 'Timer reset.');
 }
 
@@ -910,6 +1079,7 @@ function toggleTheme() {
 el('task-form').addEventListener('submit', handleTaskSubmit);
 el('current-energy-input').addEventListener('change', setCurrentEnergy);
 el('time-available-input').addEventListener('change', setTimeAvailable);
+el('park-waiting').addEventListener('click', parkSuggestedTask);
 el('download-backup').addEventListener('click', downloadBackup);
 el('restore-backup').addEventListener('click', openRestorePicker);
 el('restore-backup-input').addEventListener('change', previewRestoreBackup);
@@ -918,6 +1088,8 @@ el('cancel-restore').addEventListener('click', () => clearRestorePreview({ retur
 el('start-focus').addEventListener('click', startFocus);
 el('pause-focus').addEventListener('click', pauseFocus);
 el('reset-focus').addEventListener('click', () => stopFocus('Timer reset.'));
+el('save-handoff').addEventListener('click', saveSessionHandoff);
+el('dismiss-handoff').addEventListener('click', dismissSessionHandoff);
 el('snooze-task').addEventListener('click', snoozeSuggestedTask);
 el('complete-next').addEventListener('click', markSuggestedTaskDone);
 el('undo-delete-task').addEventListener('click', undoLastDelete);

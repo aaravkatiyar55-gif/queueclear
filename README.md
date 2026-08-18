@@ -1,22 +1,37 @@
 # QueueClear
 
-QueueClear is a local-first task tool that helps students turn a messy list into one clear next action.
+QueueClear is a local-first task-start tool for students. It helps decide what is realistic now,
+parks work that cannot be started yet, and leaves a useful note for coming back after a study break.
 
 ## The problem
 
-Assignments, revision topics, chores, and ideas can pile up into one noisy list. Often the difficult part is not doing a task; it is deciding which realistic task to begin. That task-start friction can make a short list feel heavier than it needs to.
+Assignments, revision topics, chores, and ideas can pile up into one noisy list. Often the difficult
+part is not doing a task; it is deciding which realistic task to begin. A task might also be blocked
+by missing notes or another person, or become hard to resume after an interruption. QueueClear is
+designed around those three moments rather than around maintaining a long task list.
 
 ## How QueueClear helps
 
-- Capture a task quickly with the energy it needs.
-- Add an estimate or a small first step only when it helps.
-- Choose the time available before deciding what fits right now.
-- Keep the useful context visible when choosing what to start.
-- Show one suggested task with a plain-language explanation of the rule used.
-- Snooze a task until tomorrow without losing it, then wake it early if plans change.
-- Start a small focus session connected to the selected task.
-- Download a local JSON backup and restore it in the same browser when a browser-only copy is not enough.
-- Keep the rest of the queue available without turning it into a dashboard.
+### 1. Choose one realistic start
+
+Capture a task with the energy it needs, an optional estimate, and an optional first step. QueueClear
+uses the energy and time available right now to offer one explainable starting point rather than a
+ranked productivity dashboard.
+
+### 2. Move blocked work out of the decision queue
+
+When a task cannot be started because something is missing, write what it is waiting on and move it to
+the Waiting state. It remains visible, but it no longer competes with tasks that are ready. A **Make
+ready** button returns it when the blocker is gone.
+
+### 3. Leave a handoff after a focus break
+
+The small focus timer stays connected to the selected task. When a session is paused or finished,
+QueueClear asks for the next tiny step. That handoff is saved with the task and shown the next time it
+is suggested, so a break does not mean deciding from scratch again.
+
+Supporting controls include snoozing until tomorrow, marking tasks done, a one-step delete undo, and
+local JSON backup/restore.
 
 ## How the suggested task works
 
@@ -38,10 +53,12 @@ The “Why this task?” note names the part of that rule that decided the curre
 - Optional estimated time and first step, saved with each task.
 - Compact task context in the queue and clearer context in Start here.
 - Explainable next-task selection with saved energy and time-available preferences.
+- A Waiting state for tasks blocked by a missing person, material, or decision, with a Make ready path.
 - Snooze until tomorrow and Wake now controls.
 - Mark done and delete actions, with an Undo path for the most recent deletion until refresh.
 - A 10-minute focus timer with Start, Pause, Resume, and Reset controls.
 - The focus timer names the task it is currently for.
+- A saved session handoff that records the next tiny step after a pause or completed focus session.
 - Local JSON backup download and restore for QueueClear tasks and supported preferences.
 - Paper and calm themes, visible keyboard focus, reduced-motion support, and responsive layouts.
 
@@ -85,7 +102,9 @@ Checks completed for the current app include:
 - time-available persistence and explanations for matching energy, fitting estimates, sensible time fallbacks, and queue ties;
 - empty-queue and all-snoozed states;
 - snooze, wake, mark-done, completed-title reuse, and delete behavior;
+- moving a blocked task to Waiting and making it ready again;
 - timer start, pause, resume, reset, and refresh reset behavior;
+- saving a focus-session handoff and showing it again after a refresh;
 - backup-download status after the local JSON action;
 - backup preview, invalid-backup rejection, cancellation, and confirmed local restore;
 - delete and undo-delete behavior, including restoring the task to its earlier list position;

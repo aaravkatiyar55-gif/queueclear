@@ -346,7 +346,9 @@ summary {
 .next-detail,
 .next-message,
 .focus-status,
-.why-task {
+.why-task,
+.waiting-room,
+.session-handoff {
   color: #d7e8e2;
 }
 
@@ -363,6 +365,78 @@ summary {
 
 .why-task p {
   margin: 7px 0 0;
+}
+
+.waiting-room,
+.session-handoff {
+  margin-top: 18px;
+  padding: 12px 0;
+  border-top: 1px solid #5c7771;
+}
+
+.waiting-room h3,
+.session-handoff h3 {
+  margin: 0;
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.waiting-room p,
+.session-handoff p {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+}
+
+.waiting-room label,
+.session-handoff label {
+  display: block;
+  margin-top: 10px;
+  color: #d7e8e2;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.waiting-controls,
+.handoff-controls {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.waiting-controls input,
+.handoff-controls input {
+  min-width: 0;
+  flex: 1;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid #6f918a;
+  border-radius: 6px;
+  background: var(--ink);
+  color: #fff;
+}
+
+.waiting-controls input::placeholder,
+.handoff-controls input::placeholder {
+  color: #c3d4cf;
+}
+
+.next-card .waiting-controls .text-button,
+.next-card .handoff-controls .text-button {
+  padding: 9px 0;
+}
+
+.waiting-message {
+  min-height: 1.3em;
+  color: #d7e8e2;
+}
+
+.waiting-label {
+  display: block;
+  margin-top: 3px;
+  color: #6d5340;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
 }
 
 .next-actions {
@@ -626,6 +700,18 @@ body.calm {
   .focus-timer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .waiting-controls,
+  .handoff-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .waiting-controls > *,
+  .handoff-controls > * {
+    width: 100%;
+    text-align: left;
   }
 
   .timer-controls {
