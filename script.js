@@ -1723,6 +1723,7 @@ function setTaskDone(task, done) {
       previousDone,
       previousCompletedAt,
       recurrenceTaskId,
+      todayPlanIndex: todayPlan.taskIds.indexOf(task.id),
     };
     if (task.recurrence === 'weekly') {
       const nextDate = task.dueDate ? new Date(task.dueDate + 'T12:00:00') : new Date();
@@ -1790,6 +1791,7 @@ function deleteTask(taskId) {
   }
 
   const deletedTask = tasks[deletedIndex];
+  const todayPlanIndex = todayPlan.taskIds.indexOf(taskId);
 
   if (taskId === focusTaskId) {
     stopFocus('Timer reset because its task was deleted.');
@@ -1809,6 +1811,7 @@ function deleteTask(taskId) {
     type: 'delete',
     index: deletedIndex,
     task: deletedTask,
+    todayPlanIndex,
   };
   saveTasks();
   saveTodayPlan();
@@ -1816,6 +1819,15 @@ function deleteTask(taskId) {
   render();
   showNextStatus('Task deleted. Undo stays available until you refresh or delete another task.');
   el('undo-delete-task').focus();
+}
+
+function restoreTaskToTodayPlan(taskId, todayPlanIndex) {
+  if (todayPlanIndex < 0 || todayPlan.taskIds.includes(taskId) || todayPlan.taskIds.length >= maxTodayTasks) {
+    return false;
+  }
+
+  todayPlan.taskIds.splice(Math.min(todayPlanIndex, todayPlan.taskIds.length), 0, taskId);
+  return true;
 }
 
 function undoLastAction() {
@@ -1834,10 +1846,15 @@ function undoLastAction() {
     const restoreIndex = Math.min(Math.max(lastUndo.index, 0), tasks.length);
     const restoredTask = lastUndo.task;
     tasks.splice(restoreIndex, 0, restoredTask);
+    const restoredToToday = restoreTaskToTodayPlan(restoredTask.id, lastUndo.todayPlanIndex);
     lastUndo = null;
     saveTasks();
     render();
-    showNextStatus('Restored “' + restoredTask.text + '”.');
+    showNextStatus(
+      restoredToToday
+        ? 'Restored “' + restoredTask.text + '” to your queue and today’s plan.'
+        : 'Restored “' + restoredTask.text + '”.',
+    );
     return;
   }
 
@@ -1850,11 +1867,18 @@ function undoLastAction() {
     if (lastUndo.recurrenceTaskId) {
       tasks = tasks.filter((candidate) => candidate.id !== lastUndo.recurrenceTaskId);
     }
+    const restoredToToday = task
+      ? restoreTaskToTodayPlan(task.id, lastUndo.todayPlanIndex)
+      : false;
     lastUndo = null;
     saveTasks();
     resetSuggestionChoice();
     render();
-    showNextStatus('Task returned to your active queue.');
+    showNextStatus(
+      restoredToToday
+        ? 'Task returned to your active queue and today’s plan.'
+        : 'Task returned to your active queue.',
+    );
     return;
   }
 

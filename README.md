@@ -128,7 +128,7 @@ Checks completed for the current app include:
 
 - Data stays in one browser; there is no account or device sync.
 - Restore replaces current QueueClear data in one browser; it is not cloud or device sync.
-- Undo only remembers the most recently deleted task and resets after a browser refresh.
+- Undo remembers the most recent delete, completion, or clear-completed action and resets after a browser refresh. If a restored task had been in Today’s plan, QueueClear returns it there when the five-task plan still has room.
 - The timer intentionally resets after a browser refresh.
 - There are no notifications, calendar connections, or cloud backups.
 - QueueClear is not a medical or clinical productivity tool.
