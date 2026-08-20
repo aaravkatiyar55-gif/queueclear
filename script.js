@@ -1053,7 +1053,7 @@ function createTaskEditForm(task) {
   cancelButton.type = 'button';
   cancelButton.className = 'text-button';
   cancelButton.textContent = 'Cancel';
-  cancelButton.addEventListener('click', cancelTaskEdit);
+  cancelButton.addEventListener('click', () => cancelTaskEdit(task.id));
 
   form.append(
     createEditField('Task title', titleInput),
@@ -1080,10 +1080,11 @@ function beginTaskEdit(taskId) {
   }
 }
 
-function cancelTaskEdit() {
+function cancelTaskEdit(taskId) {
   editingTaskId = null;
   renderTaskList();
   showStatus('queue-message', 'Edit cancelled. The task was not changed.');
+  focusTaskCheckboxOrQueue(taskId);
 }
 
 function saveTaskEdit(event, taskId) {
