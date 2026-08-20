@@ -18,6 +18,7 @@ import {
   maxChecklistItems,
 } from './queueclear-model.mjs';
 import { validateBackup } from './queueclear-recovery.mjs';
+import { restoreTaskIdToTodayPlan } from './queueclear-today-plan.mjs';
 
 const storageKey = 'queueclear.tasks.v2';
 const legacyStorageKey = 'queueclear.tasks.v1';
@@ -1131,6 +1132,7 @@ function saveTaskEdit(event, taskId) {
   saveTasks();
   render();
   showStatus('queue-message', 'Task updated.');
+  focusTaskCheckboxOrQueue(task.id);
 }
 
 function renderTaskList() {
@@ -1151,6 +1153,7 @@ function renderTaskList() {
     const actions = document.createElement('div');
 
     item.className = 'task-row' + (task.done ? ' is-done' : '');
+    checkbox.id = 'task-complete-' + task.id;
     checkbox.type = 'checkbox';
     checkbox.checked = task.done;
     checkbox.setAttribute('aria-label', 'Mark ' + task.text + ' complete');
@@ -1822,12 +1825,24 @@ function deleteTask(taskId) {
 }
 
 function restoreTaskToTodayPlan(taskId, todayPlanIndex) {
-  if (todayPlanIndex < 0 || todayPlan.taskIds.includes(taskId) || todayPlan.taskIds.length >= maxTodayTasks) {
-    return false;
+  const result = restoreTaskIdToTodayPlan(
+    todayPlan.taskIds,
+    taskId,
+    todayPlanIndex,
+    maxTodayTasks,
+  );
+  todayPlan.taskIds = result.taskIds;
+  return result.restored;
+}
+
+function focusTaskCheckboxOrQueue(taskId) {
+  const taskCheckbox = el('task-complete-' + taskId);
+  if (taskCheckbox) {
+    taskCheckbox.focus();
+    return;
   }
 
-  todayPlan.taskIds.splice(Math.min(todayPlanIndex, todayPlan.taskIds.length), 0, taskId);
-  return true;
+  el('queue-search').focus();
 }
 
 function undoLastAction() {
@@ -1850,6 +1865,7 @@ function undoLastAction() {
     lastUndo = null;
     saveTasks();
     render();
+    focusTaskCheckboxOrQueue(restoredTask.id);
     showNextStatus(
       restoredToToday
         ? 'Restored “' + restoredTask.text + '” to your queue and today’s plan.'
@@ -1874,6 +1890,9 @@ function undoLastAction() {
     saveTasks();
     resetSuggestionChoice();
     render();
+    if (task) {
+      focusTaskCheckboxOrQueue(task.id);
+    }
     showNextStatus(
       restoredToToday
         ? 'Task returned to your active queue and today’s plan.'
@@ -2102,6 +2121,12 @@ function setTimeAvailable() {
 }
 
 function updateQueueControls() {
+  const activeControl = document.activeElement;
+  const focusedControlId = ['queue-search', 'queue-filter', 'queue-sort'].includes(activeControl?.id)
+    ? activeControl.id
+    : null;
+  const selectionStart = focusedControlId === 'queue-search' ? activeControl.selectionStart : null;
+  const selectionEnd = focusedControlId === 'queue-search' ? activeControl.selectionEnd : null;
   const selectedFilter = el('queue-filter').value;
   const selectedSort = el('queue-sort').value;
   queueFilter = queueFilterOptions.includes(selectedFilter) ? selectedFilter : 'all';
@@ -2109,6 +2134,13 @@ function updateQueueControls() {
   queueSearch = el('queue-search').value;
   editingTaskId = null;
   renderTaskList();
+  if (focusedControlId) {
+    const restoredControl = el(focusedControlId);
+    restoredControl.focus();
+    if (focusedControlId === 'queue-search' && selectionStart !== null && selectionEnd !== null) {
+      restoredControl.setSelectionRange(selectionStart, selectionEnd);
+    }
+  }
 }
 
 function applyTheme() {
