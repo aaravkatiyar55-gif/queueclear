@@ -14,7 +14,7 @@ designed around those three moments rather than around maintaining a long task l
 
 ### 1. Choose one realistic start
 
-Capture a task with the energy it needs, an optional estimate, optional due date, and an optional first step. QueueClear
+Capture a task with the energy it needs, a subject, a gentle urgency label, an optional estimate, optional due date, and an optional first step. QueueClear
 uses the energy and time available right now to offer one explainable starting point rather than a
 ranked productivity dashboard.
 
@@ -50,6 +50,7 @@ The “Why this task?” note names the part of that rule that decided the curre
 ## Features
 
 - Quick task capture with low, medium, or high energy.
+- Optional subject and practical urgency labels to make a mixed school queue easier to scan.
 - Optional estimated time and first step, saved with each task.
 - Optional due dates, shown as due today, tomorrow, or overdue context without invented urgency.
 - Compact task context in the queue and clearer context in Start here.
@@ -57,8 +58,11 @@ The “Why this task?” note names the part of that rule that decided the curre
 - A predictable **Pick another** option when more than one ready task fits.
 - A Waiting state for tasks blocked by a missing person, material, or decision, with a Make ready path.
 - Later-today, tomorrow, and next-week snooze choices, with Wake now controls.
-- Queue search, state/energy/due-today filters, and suggested/newest/oldest/shortest sorting.
-- Inline task editing for title, energy, estimate, first step, and due date.
+- Queue search, state/energy/due-today filters, and suggested/newest/oldest/shortest/due-soon sorting.
+- Inline task editing for title, energy, estimate, first step, due date, subject, urgency, and repeat setting.
+- Manual per-task checklists with clear completed-item counts.
+- Weekly repeat tasks that create the next occurrence after completion; undo also removes that newly created occurrence.
+- A Today plan that holds up to five chosen tasks, supports keyboard-accessible ordering, and shows the planned estimated minutes.
 - Mark done, delete, and clear-completed actions, with an Undo path for the most recent action until refresh.
 - A chosen 5-, 10-, 15-, or 25-minute focus timer with Start, Pause, Resume, and Reset controls.
 - The focus timer names the task it is currently for.
@@ -71,9 +75,9 @@ The “Why this task?” note names the part of that rule that decided the curre
 
 QueueClear data stays in the current browser. To keep a copy, choose **Download backup** in the Your data section and save the JSON file somewhere you can find later.
 
-To restore it, choose **Restore backup**, select that JSON file, and check the preview. QueueClear shows the recoverable task count and whether the saved theme, energy, available-time, and personal settings are included. Choose **Replace current data** only if you want to continue.
+To restore it, choose **Restore backup**, select that JSON file, and check the preview. QueueClear lists every recoverable task and shows which saved preferences are included. You can either choose **Replace current data** or select particular tasks and choose **Add selected items safely**. Safe recovery keeps the current queue and skips an incoming active task whose title already exists.
 
-Restore replaces current QueueClear data in that browser. It does not upload the file or sync data to another device. Malformed JSON files and backups with an unsupported QueueClear structure are rejected before any current data changes.
+Replacing current data removes current QueueClear data in that browser. Safe selected recovery does not remove current tasks. Neither option uploads the file or syncs data to another device. Malformed JSON files and backups with an unsupported QueueClear structure are rejected before any current data changes.
 
 ## Privacy
 
@@ -114,6 +118,8 @@ Checks completed for the current app include:
 - saving a focus-session handoff and showing it again after a refresh;
 - backup-download status after the local JSON action;
 - backup preview, invalid-backup rejection, cancellation, and confirmed local restore;
+- selective task recovery, duplicate-active-title skipping, and backup-schema unit coverage;
+- task subject, urgency, checklist normalization, and weekly-repeat defaults in repeatable Node tests;
 - delete and undo-delete behavior, including restoring the task to its earlier list position;
 - keyboard focus on the skip link and keyboard use of the context disclosure;
 - 320px, 360px, 768px, and 1280px checks with no horizontal page overflow.
