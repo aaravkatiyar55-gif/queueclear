@@ -14,7 +14,7 @@ designed around those three moments rather than around maintaining a long task l
 
 ### 1. Choose one realistic start
 
-Capture a task with the energy it needs, an optional estimate, and an optional first step. QueueClear
+Capture a task with the energy it needs, an optional estimate, optional due date, and an optional first step. QueueClear
 uses the energy and time available right now to offer one explainable starting point rather than a
 ranked productivity dashboard.
 
@@ -30,7 +30,7 @@ The small focus timer stays connected to the selected task. When a session is pa
 QueueClear asks for the next tiny step. That handoff is saved with the task and shown the next time it
 is suggested, so a break does not mean deciding from scratch again.
 
-Supporting controls include snoozing until tomorrow, marking tasks done, a one-step delete undo, and
+Supporting controls include flexible snoozing, marking tasks done, a one-step undo for the last task action, and
 local JSON backup/restore.
 
 ## How the suggested task works
@@ -51,28 +51,33 @@ The “Why this task?” note names the part of that rule that decided the curre
 
 - Quick task capture with low, medium, or high energy.
 - Optional estimated time and first step, saved with each task.
+- Optional due dates, shown as due today, tomorrow, or overdue context without invented urgency.
 - Compact task context in the queue and clearer context in Start here.
 - Explainable next-task selection with saved energy and time-available preferences.
+- A predictable **Pick another** option when more than one ready task fits.
 - A Waiting state for tasks blocked by a missing person, material, or decision, with a Make ready path.
-- Snooze until tomorrow and Wake now controls.
-- Mark done and delete actions, with an Undo path for the most recent deletion until refresh.
-- A 10-minute focus timer with Start, Pause, Resume, and Reset controls.
+- Later-today, tomorrow, and next-week snooze choices, with Wake now controls.
+- Queue search, state/energy/due-today filters, and suggested/newest/oldest/shortest sorting.
+- Inline task editing for title, energy, estimate, first step, and due date.
+- Mark done, delete, and clear-completed actions, with an Undo path for the most recent action until refresh.
+- A chosen 5-, 10-, 15-, or 25-minute focus timer with Start, Pause, Resume, and Reset controls.
 - The focus timer names the task it is currently for.
 - A saved session handoff that records the next tiny step after a pause or completed focus session.
 - Local JSON backup download and restore for QueueClear tasks and supported preferences.
+- Browser-only personal settings for a workspace name, a note to yourself, and a default focus length.
 - Paper and calm themes, visible keyboard focus, reduced-motion support, and responsive layouts.
 
 ## Back up and restore
 
 QueueClear data stays in the current browser. To keep a copy, choose **Download backup** in the Your data section and save the JSON file somewhere you can find later.
 
-To restore it, choose **Restore backup**, select that JSON file, and check the preview. QueueClear shows the recoverable task count and whether the saved theme, energy, and available-time preferences are included. Choose **Replace current data** only if you want to continue.
+To restore it, choose **Restore backup**, select that JSON file, and check the preview. QueueClear shows the recoverable task count and whether the saved theme, energy, available-time, and personal settings are included. Choose **Replace current data** only if you want to continue.
 
 Restore replaces current QueueClear data in that browser. It does not upload the file or sync data to another device. Malformed JSON files and backups with an unsupported QueueClear structure are rejected before any current data changes.
 
 ## Privacy
 
-QueueClear saves tasks, energy and time preferences, and the theme preference in this browser through localStorage. No account is required and no data is synced between devices. Clearing browser storage can remove saved tasks. A downloaded backup is optional and stays a normal local file; restore reads that file only in this browser. Do not use QueueClear for sensitive information.
+QueueClear saves tasks, energy and time preferences, personal settings, and the theme preference in this browser through localStorage. No account is required and no data is synced between devices. Clearing browser storage can remove saved tasks. A downloaded backup is optional and stays a normal local file; restore reads that file only in this browser. Do not use QueueClear for sensitive information.
 
 ## Run locally
 
@@ -99,9 +104,11 @@ Checks completed for the current app include:
 - blank-title and duplicate-active-task validation;
 - creating tasks with and without an estimate or first step;
 - task, context, energy, and theme persistence after refresh;
+- due-date capture, due-today filtering, and local-date handling outside UTC;
 - time-available persistence and explanations for matching energy, fitting estimates, sensible time fallbacks, and queue ties;
 - empty-queue and all-snoozed states;
-- snooze, wake, mark-done, completed-title reuse, and delete behavior;
+- pick-another cycling, later/tomorrow/next-week snooze, wake, mark-done, completed-title reuse, and delete behavior;
+- queue search, filters, sorting, inline editing, completion undo, and clear-completed undo;
 - moving a blocked task to Waiting and making it ready again;
 - timer start, pause, resume, reset, and refresh reset behavior;
 - saving a focus-session handoff and showing it again after a refresh;

@@ -90,6 +90,14 @@ footer {
   margin-bottom: 0;
 }
 
+.personal-note {
+  margin-top: 10px !important;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  color: var(--ink) !important;
+  font-size: 0.9rem;
+}
+
 .capture-panel,
 .queue-panel {
   padding: 18px;
@@ -115,6 +123,43 @@ footer {
 
 .data-panel .text-button {
   padding: 4px 0;
+}
+
+.personal-settings {
+  margin: 14px 0;
+}
+
+.personal-settings summary {
+  width: fit-content;
+  padding-block: 4px;
+}
+
+.personal-settings-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(132px, 0.5fr) auto;
+  align-items: end;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 12px;
+  border-left: 2px solid var(--accent-soft);
+  background: var(--surface);
+}
+
+.personal-settings-fields input,
+.personal-settings-fields select {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.settings-help {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.83rem;
 }
 
 .data-actions,
@@ -188,7 +233,11 @@ footer {
 .task-form input,
 .task-form select,
 .current-energy select,
-.current-time select {
+.current-time select,
+.queue-tools input,
+.queue-tools select,
+.task-edit-form input,
+.task-edit-form select {
   width: 100%;
   min-height: 42px;
   padding: 0 10px;
@@ -248,6 +297,10 @@ summary {
   grid-column: 1 / -1;
 }
 
+.optional-label {
+  font-weight: 500;
+}
+
 .task-context summary {
   width: fit-content;
   padding-block: 4px;
@@ -255,7 +308,7 @@ summary {
 
 .context-fields {
   display: grid;
-  grid-template-columns: minmax(132px, 0.35fr) minmax(0, 1fr);
+  grid-template-columns: minmax(132px, 0.35fr) minmax(0, 1fr) minmax(142px, 0.42fr);
   gap: 10px;
   margin-top: 8px;
   padding: 12px;
@@ -446,6 +499,21 @@ summary {
   gap: 12px;
 }
 
+.snooze-options {
+  color: #d7e8e2;
+}
+
+.snooze-options summary {
+  color: #d7e8e2;
+}
+
+.snooze-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 7px;
+}
+
 .next-card .text-button {
   color: #d7e8e2;
 }
@@ -525,6 +593,27 @@ summary {
   list-style: none;
 }
 
+.queue-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(2, minmax(132px, 0.45fr)) auto;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.queue-tools .text-button {
+  min-height: 42px;
+  padding: 0 4px;
+  text-align: left;
+}
+
+.queue-message {
+  min-height: 1.3em;
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
 .task-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
@@ -546,6 +635,23 @@ summary {
 
 .task-content {
   min-width: 0;
+}
+
+.task-edit-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(112px, 0.7fr) minmax(120px, 0.7fr);
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.task-edit-form .field:first-child,
+.task-edit-form .field:nth-child(4) {
+  grid-column: span 2;
+}
+
+.task-edit-form .primary-button,
+.task-edit-form .text-button {
+  align-self: end;
 }
 
 .task-text {
@@ -647,8 +753,28 @@ body.calm {
   }
 
   .task-form,
-  .context-fields {
+  .context-fields,
+  .personal-settings-fields,
+  .queue-tools,
+  .task-edit-form {
     grid-template-columns: 1fr;
+  }
+
+  .personal-settings-fields > .text-button {
+    width: 100%;
+    text-align: left;
+  }
+
+  .queue-tools .text-button,
+  .task-edit-form .primary-button,
+  .task-edit-form .text-button {
+    width: 100%;
+    text-align: left;
+  }
+
+  .task-edit-form .field:first-child,
+  .task-edit-form .field:nth-child(4) {
+    grid-column: auto;
   }
 
   .add-task-button,
@@ -676,6 +802,16 @@ body.calm {
   }
 
   .next-actions > * {
+    width: 100%;
+    text-align: left;
+  }
+
+  .snooze-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .snooze-controls > * {
     width: 100%;
     text-align: left;
   }

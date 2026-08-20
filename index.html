@@ -8,13 +8,13 @@
       content="QueueClear helps students choose one small task to start."
     />
     <title>QueueClear — one task to start</title>
-    <link rel="stylesheet" href="style.css?v=10" />
+    <link rel="stylesheet" href="style.css?v=12" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to tasks</a>
 
     <header class="site-header">
-      <a class="brand" href="#main">QueueClear</a>
+      <a class="brand" href="#main"><span id="workspace-label">QueueClear</span></a>
       <button class="quiet-button" id="theme-toggle" type="button" aria-pressed="false">
         Use calm theme
       </button>
@@ -27,6 +27,7 @@
           Choose one task that fits your energy and time, move blocked work out of the way, and
           leave yourself a clear handoff when you pause.
         </p>
+        <p id="personal-note" class="personal-note" hidden></p>
       </section>
 
       <section class="capture-panel" aria-labelledby="capture-title">
@@ -82,6 +83,11 @@
                   aria-describedby="first-step-help"
                 />
                 <p id="first-step-help" class="field-help">Small first steps are easier to start.</p>
+              </div>
+
+              <div class="field">
+                <label for="due-date-input">Due date <span class="optional-label">(optional)</span></label>
+                <input id="due-date-input" type="date" />
               </div>
             </div>
           </details>
@@ -167,6 +173,7 @@
             </button>
             <button id="pause-focus" class="text-button" type="button" disabled>Pause</button>
             <button id="reset-focus" class="text-button" type="button" disabled>Reset</button>
+            <button id="end-focus" class="text-button" type="button" disabled>End session</button>
           </div>
           <p id="focus-status" class="focus-status" role="status" aria-live="polite">
             Pause to leave a handoff for later. The timer resets if you refresh the page.
@@ -191,21 +198,58 @@
         </section>
 
         <div class="next-actions">
-          <button id="snooze-task" class="text-button" type="button" disabled>
-            Snooze until tomorrow
-          </button>
+          <button id="pick-another" class="text-button" type="button" disabled>Pick another</button>
+          <details id="snooze-options" class="snooze-options">
+            <summary>Snooze this task</summary>
+            <div class="snooze-controls">
+              <button id="snooze-later" class="text-button" type="button">Later today</button>
+              <button id="snooze-tomorrow" class="text-button" type="button">Tomorrow</button>
+              <button id="snooze-next-week" class="text-button" type="button">Next week</button>
+            </div>
+          </details>
           <button id="complete-next" class="text-button" type="button" disabled>Mark done</button>
         </div>
         <p id="next-message" class="next-message" role="status" aria-live="polite"></p>
         <div id="undo-delete" class="undo-delete" hidden>
           <p id="undo-message" role="status" aria-live="polite"></p>
-          <button id="undo-delete-task" class="text-button" type="button">Undo delete</button>
+          <button id="undo-delete-task" class="text-button" type="button">Undo last action</button>
         </div>
       </section>
 
       <section class="queue-panel" aria-labelledby="queue-title">
         <h2 id="queue-title">Other tasks</h2>
         <p class="section-help">They stay here until you are ready for them.</p>
+        <div class="queue-tools" aria-label="Queue controls">
+          <div class="field">
+            <label for="queue-search">Find a task</label>
+            <input id="queue-search" type="search" autocomplete="off" placeholder="Search your queue" />
+          </div>
+          <div class="field">
+            <label for="queue-filter">Show</label>
+            <select id="queue-filter">
+              <option value="all">All tasks</option>
+              <option value="ready">Ready to start</option>
+              <option value="waiting">Waiting</option>
+              <option value="snoozed">Snoozed</option>
+              <option value="completed">Completed</option>
+              <option value="due-today">Due today</option>
+              <option value="low">Low energy</option>
+              <option value="medium">Medium energy</option>
+              <option value="high">High energy</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="queue-sort">Order</label>
+            <select id="queue-sort">
+              <option value="suggested">Suggested order</option>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="shortest">Shortest first</option>
+            </select>
+          </div>
+          <button id="clear-completed" class="text-button" type="button">Clear completed</button>
+        </div>
+        <p id="queue-message" class="queue-message" role="status" aria-live="polite"></p>
         <ul id="task-list" class="task-list"></ul>
         <p id="empty-state" class="empty-state">Your queue is clear. Add one small task above.</p>
       </section>
@@ -213,6 +257,40 @@
       <section class="data-panel" aria-labelledby="data-title">
         <h2 id="data-title">Your data</h2>
         <p>QueueClear saves tasks only in this browser. Download a copy if you want to keep one.</p>
+        <details class="personal-settings">
+          <summary>Make QueueClear yours</summary>
+          <div class="personal-settings-fields">
+            <div class="field">
+              <label for="workspace-name-input">Name for this space</label>
+              <input
+                id="workspace-name-input"
+                maxlength="40"
+                autocomplete="off"
+                placeholder="e.g. Aarav's study space"
+              />
+            </div>
+            <div class="field">
+              <label for="personal-note-input">A note for future you</label>
+              <input
+                id="personal-note-input"
+                maxlength="140"
+                autocomplete="off"
+                placeholder="e.g. Start gently. One clear task is enough."
+              />
+            </div>
+            <div class="field">
+              <label for="focus-duration-input">Default focus length</label>
+              <select id="focus-duration-input">
+                <option value="5">5 minutes</option>
+                <option value="10" selected>10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="25">25 minutes</option>
+              </select>
+            </div>
+            <button id="save-personal-settings" class="text-button" type="button">Save personal settings</button>
+          </div>
+          <p class="settings-help">These settings stay in this browser and are included in a QueueClear backup.</p>
+        </details>
         <div class="data-actions">
           <button id="download-backup" class="text-button" type="button">Download backup</button>
           <button id="restore-backup" class="text-button" type="button">Restore backup</button>
@@ -239,6 +317,6 @@
     </main>
 
     <footer><p>Saved only in this browser.</p></footer>
-    <script src="script.js?v=16"></script>
+    <script src="script.js?v=18"></script>
   </body>
 </html>

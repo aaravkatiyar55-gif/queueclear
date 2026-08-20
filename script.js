@@ -3,23 +3,46 @@ const legacyStorageKey = 'queueclear.tasks.v1';
 const themeKey = 'queueclear.theme.v1';
 const currentEnergyKey = 'queueclear.current-energy.v1';
 const timeAvailableKey = 'queueclear.time-available.v1';
+const settingsKey = 'queueclear.settings.v1';
 const energyLevels = ['low', 'medium', 'high'];
 const estimateOptions = [5, 10, 15, 25, 45, 60];
 const timeAvailableOptions = [5, 15, 25, 45];
+const focusDurationOptions = [5, 10, 15, 25];
 const maxTitleLength = 110;
 const maxFirstStepLength = 180;
 const maxWaitingOnLength = 160;
 const maxHandoffLength = 180;
+const maxWorkspaceNameLength = 40;
+const maxPersonalNoteLength = 140;
+const defaultDocumentTitle = 'QueueClear — one task to start';
+const queueFilterOptions = [
+  'all',
+  'ready',
+  'waiting',
+  'snoozed',
+  'completed',
+  'due-today',
+  'low',
+  'medium',
+  'high',
+];
+const queueSortOptions = ['suggested', 'newest', 'oldest', 'shortest'];
 
 let tasks = readTasks();
 let currentEnergy = readCurrentEnergy();
 let timeAvailable = readTimeAvailable();
+let personalSettings = readPersonalSettings();
 let focusTimer = null;
-let focusSeconds = 600;
+let focusSeconds = getDefaultFocusSeconds();
 let focusTaskId = null;
 let pendingRestore = null;
-let lastDeletedTask = null;
+let lastUndo = null;
 let sessionReviewTaskId = null;
+let editingTaskId = null;
+let suggestionOffset = 0;
+let queueFilter = 'all';
+let queueSort = 'suggested';
+let queueSearch = '';
 const statusTimers = {};
 
 const el = (id) => document.getElementById(id);
@@ -30,6 +53,18 @@ function normalizeWhitespace(value) {
 
 function normalizeTimestamp(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function normalizeDueDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(year, month - 1, day);
+  const isValid =
+    parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day;
+  return isValid ? value : null;
 }
 
 function normalizeTask(candidate) {
@@ -53,8 +88,7 @@ function normalizeTask(candidate) {
     handoffAt: normalizeTimestamp(candidate.handoffAt),
     snoozedUntil: normalizeTimestamp(candidate.snoozedUntil),
     completedAt: normalizeTimestamp(candidate.completedAt),
-    // Older tasks may include a date. QueueClear no longer uses it to rank tasks.
-    dueDate: typeof candidate.dueDate === 'string' ? candidate.dueDate : null,
+    dueDate: normalizeDueDate(candidate.dueDate),
   };
 }
 
@@ -92,7 +126,35 @@ function saveTimeAvailable() {
   localStorage.setItem(timeAvailableKey, timeAvailable === null ? '' : String(timeAvailable));
 }
 
-function createTask({ text, energy, estimatedMinutes, firstStep }) {
+function normalizePersonalSettings(candidate) {
+  return {
+    workspaceName:
+      normalizeWhitespace(candidate?.workspaceName).slice(0, maxWorkspaceNameLength) || '',
+    personalNote:
+      normalizeWhitespace(candidate?.personalNote).slice(0, maxPersonalNoteLength) || '',
+    focusMinutes: focusDurationOptions.includes(Number(candidate?.focusMinutes))
+      ? Number(candidate.focusMinutes)
+      : 10,
+  };
+}
+
+function readPersonalSettings() {
+  try {
+    return normalizePersonalSettings(JSON.parse(localStorage.getItem(settingsKey) || '{}'));
+  } catch {
+    return normalizePersonalSettings({});
+  }
+}
+
+function savePersonalSettings() {
+  localStorage.setItem(settingsKey, JSON.stringify(personalSettings));
+}
+
+function getDefaultFocusSeconds() {
+  return personalSettings.focusMinutes * 60;
+}
+
+function createTask({ text, energy, estimatedMinutes, firstStep, dueDate }) {
   return normalizeTask({
     id: crypto.randomUUID(),
     text,
@@ -106,6 +168,7 @@ function createTask({ text, energy, estimatedMinutes, firstStep }) {
     handoffAt: null,
     snoozedUntil: null,
     completedAt: null,
+    dueDate,
   });
 }
 
@@ -165,15 +228,22 @@ function getSuggestion() {
   const timeMatches = getTasksThatFitTime(energyCandidates);
   const candidates = timeMatches.length > 0 ? timeMatches : energyCandidates;
 
+  const orderedCandidates = candidates.slice().sort(compareByEstimateThenQueueOrder);
+  const selectedIndex = orderedCandidates.length === 0 ? 0 : suggestionOffset % orderedCandidates.length;
+
   return {
-    task: candidates.slice().sort(compareByEstimateThenQueueOrder)[0] || null,
+    task: orderedCandidates[selectedIndex] || null,
     available,
-    candidates,
+    candidates: orderedCandidates,
     energyFilteredChoices: matchesEnergy.length > 0 && matchesEnergy.length < available.length,
     usedEnergyFallback: matchesEnergy.length === 0 && available.length > 0,
     usedTimeFit: timeMatches.length > 0,
     usedTimeFallback: timeAvailable !== null && timeMatches.length === 0 && available.length > 0,
   };
+}
+
+function resetSuggestionChoice() {
+  suggestionOffset = 0;
 }
 
 function getSuggestedTask() {
@@ -235,6 +305,11 @@ function getSuggestionReason(suggestion) {
     );
   }
 
+  if (suggestionOffset > 0 && candidates.length > 1) {
+    reasons.push('You chose another task from the same ready choices.');
+    return reasons.join(' ');
+  }
+
   if (candidates.length > 1 || reasons.length === 0 || usedEnergyFallback || usedTimeFallback) {
     reasons.push(getTieBreakReason(task, candidates));
   }
@@ -280,6 +355,7 @@ function buildBackup() {
     theme: getThemePreference(),
     currentEnergy,
     timeAvailable,
+    personalSettings,
   };
 }
 
@@ -352,12 +428,25 @@ function validateBackup(candidate) {
     (value) => value === null || timeAvailableOptions.includes(value),
     null,
   );
+  const settings = getRestoredPreference(
+    candidate,
+    'personalSettings',
+    (value) =>
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      typeof value.workspaceName === 'string' &&
+      typeof value.personalNote === 'string' &&
+      focusDurationOptions.includes(Number(value.focusMinutes)),
+    normalizePersonalSettings({}),
+  );
 
   return {
     tasks: restoredTasks,
     theme,
     currentEnergy: energy,
     timeAvailable: availableTime,
+    personalSettings: settings,
   };
 }
 
@@ -375,6 +464,7 @@ function renderRestorePreview(backup) {
     formatRestorePreference('Theme', backup.theme, 'paper'),
     formatRestorePreference('Energy', backup.currentEnergy, 'medium'),
     formatRestorePreference('Available time', backup.timeAvailable, 'no limit'),
+    formatRestorePreference('Personal settings', backup.personalSettings, 'QueueClear defaults'),
   ].join(' ');
   el('restore-preview').hidden = false;
   el('confirm-restore').focus();
@@ -437,6 +527,7 @@ function restoreBackup() {
   tasks = pendingRestore.tasks;
   currentEnergy = pendingRestore.currentEnergy.value;
   timeAvailable = pendingRestore.timeAvailable.value;
+  personalSettings = pendingRestore.personalSettings.value;
   localStorage.setItem(storageKey, JSON.stringify(tasks));
   localStorage.removeItem(legacyStorageKey);
   localStorage.setItem(themeKey, pendingRestore.theme.value);
@@ -445,12 +536,13 @@ function restoreBackup() {
     timeAvailableKey,
     timeAvailable === null ? '' : String(timeAvailable),
   );
+  savePersonalSettings();
 
   clearInterval(focusTimer);
   focusTimer = null;
-  focusSeconds = 600;
+  focusSeconds = getDefaultFocusSeconds();
   focusTaskId = null;
-  lastDeletedTask = null;
+  lastUndo = null;
   sessionReviewTaskId = null;
   clearRestorePreview();
   applyTheme();
@@ -506,6 +598,7 @@ function showNextStatus(message) {
 function clearCaptureContext() {
   el('estimated-minutes').value = '';
   el('first-step-input').value = '';
+  el('due-date-input').value = '';
 }
 
 function renderSuggestion() {
@@ -526,7 +619,8 @@ function renderSuggestion() {
         : 'Everything active is snoozed. Wake a task below if your plans changed; otherwise it returns tomorrow.'
       : 'Your queue is clear. Add one small task above.';
     el('next-details').hidden = true;
-    el('snooze-task').disabled = true;
+    el('pick-another').disabled = true;
+    el('snooze-options').hidden = true;
     el('complete-next').disabled = true;
     return;
   }
@@ -535,6 +629,10 @@ function renderSuggestion() {
     formatEnergy(suggestion.energy),
     ...getTaskContext(suggestion, { longEstimate: true, includeFirstStep: false }),
   ];
+  const dueDate = formatDueDate(suggestion.dueDate);
+  if (dueDate) {
+    details.push(dueDate);
+  }
 
   el('next-task').textContent = suggestion.text;
   el('next-meta').textContent = details.join(' · ');
@@ -548,7 +646,8 @@ function renderSuggestion() {
     : '';
   el('why-task').textContent = getSuggestionReason(recommendation);
   el('next-details').hidden = false;
-  el('snooze-task').disabled = false;
+  el('pick-another').disabled = recommendation.candidates.length < 2;
+  el('snooze-options').hidden = false;
   el('complete-next').disabled = false;
 }
 
@@ -561,11 +660,222 @@ function createTaskButton(label, className, ariaLabel) {
   return button;
 }
 
+function getLocalDatePart(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return year + '-' + month + '-' + day;
+}
+
+function isDueToday(task) {
+  return task.dueDate === getLocalDatePart();
+}
+
+function formatDueDate(dueDate) {
+  if (!dueDate) {
+    return '';
+  }
+
+  const today = getLocalDatePart();
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrow = getLocalDatePart(tomorrowDate);
+  if (dueDate < today) {
+    return 'Overdue: ' + dueDate;
+  }
+  if (dueDate === today) {
+    return 'Due today';
+  }
+  if (dueDate === tomorrow) {
+    return 'Due tomorrow';
+  }
+  return 'Due ' + dueDate;
+}
+
+function matchesQueueFilter(task) {
+  if (queueFilter === 'all') {
+    return true;
+  }
+  if (queueFilter === 'ready') {
+    return !task.done && !isSnoozed(task) && !isWaiting(task);
+  }
+  if (queueFilter === 'waiting') {
+    return !task.done && isWaiting(task);
+  }
+  if (queueFilter === 'snoozed') {
+    return !task.done && isSnoozed(task);
+  }
+  if (queueFilter === 'completed') {
+    return task.done;
+  }
+  if (queueFilter === 'due-today') {
+    return !task.done && isDueToday(task);
+  }
+  return task.energy === queueFilter;
+}
+
+function getSuggestedQueueOrder() {
+  const suggested = getSuggestion().candidates;
+  const suggestedIds = new Set(suggested.map((task) => task.id));
+  return suggested.concat(tasks.filter((task) => !suggestedIds.has(task.id)));
+}
+
+function getVisibleQueueTasks() {
+  const searchable = normalizeWhitespace(queueSearch).toLocaleLowerCase();
+  let queueTasks = tasks.filter(
+    (task) => !searchable || task.text.toLocaleLowerCase().includes(searchable),
+  );
+  queueTasks = queueTasks.filter(matchesQueueFilter);
+
+  if (queueSort === 'newest') {
+    return queueTasks.slice().sort((first, second) => second.createdAt - first.createdAt);
+  }
+  if (queueSort === 'oldest') {
+    return queueTasks.slice().sort((first, second) => first.createdAt - second.createdAt);
+  }
+  if (queueSort === 'shortest') {
+    return queueTasks.slice().sort(compareByEstimateThenQueueOrder);
+  }
+
+  const visibleIds = new Set(queueTasks.map((task) => task.id));
+  return getSuggestedQueueOrder().filter((task) => visibleIds.has(task.id));
+}
+
+function createEditField(labelText, input) {
+  const field = document.createElement('div');
+  const label = document.createElement('label');
+  label.textContent = labelText;
+  label.htmlFor = input.id;
+  field.className = 'field';
+  field.append(label, input);
+  return field;
+}
+
+function createTaskEditForm(task) {
+  const form = document.createElement('form');
+  const titleInput = document.createElement('input');
+  const energyInput = document.createElement('select');
+  const estimateInput = document.createElement('select');
+  const firstStepInput = document.createElement('input');
+  const dueDateInput = document.createElement('input');
+  const saveButton = document.createElement('button');
+  const cancelButton = document.createElement('button');
+  const suffix = task.id;
+
+  form.className = 'task-edit-form';
+  titleInput.id = 'edit-title-' + suffix;
+  titleInput.maxLength = maxTitleLength;
+  titleInput.value = task.text;
+  energyInput.id = 'edit-energy-' + suffix;
+  energyLevels.forEach((energy) => {
+    const option = document.createElement('option');
+    option.value = energy;
+    option.textContent = formatEnergy(energy);
+    option.selected = task.energy === energy;
+    energyInput.append(option);
+  });
+  estimateInput.id = 'edit-estimate-' + suffix;
+  const noEstimate = document.createElement('option');
+  noEstimate.value = '';
+  noEstimate.textContent = 'No estimate yet';
+  estimateInput.append(noEstimate);
+  estimateOptions.forEach((minutes) => {
+    const option = document.createElement('option');
+    option.value = String(minutes);
+    option.textContent = minutes + ' minutes';
+    option.selected = task.estimatedMinutes === minutes;
+    estimateInput.append(option);
+  });
+  firstStepInput.id = 'edit-first-step-' + suffix;
+  firstStepInput.maxLength = maxFirstStepLength;
+  firstStepInput.value = task.firstStep || '';
+  dueDateInput.id = 'edit-due-date-' + suffix;
+  dueDateInput.type = 'date';
+  dueDateInput.value = task.dueDate || '';
+  saveButton.type = 'submit';
+  saveButton.className = 'primary-button';
+  saveButton.textContent = 'Save';
+  cancelButton.type = 'button';
+  cancelButton.className = 'text-button';
+  cancelButton.textContent = 'Cancel';
+  cancelButton.addEventListener('click', cancelTaskEdit);
+
+  form.append(
+    createEditField('Task title', titleInput),
+    createEditField('Energy needed', energyInput),
+    createEditField('Estimated time', estimateInput),
+    createEditField('First step', firstStepInput),
+    createEditField('Due date', dueDateInput),
+    saveButton,
+    cancelButton,
+  );
+  form.addEventListener('submit', (event) => saveTaskEdit(event, task.id));
+  return form;
+}
+
+function beginTaskEdit(taskId) {
+  editingTaskId = taskId;
+  renderTaskList();
+  const titleInput = el('edit-title-' + taskId);
+  if (titleInput) {
+    titleInput.focus();
+  }
+}
+
+function cancelTaskEdit() {
+  editingTaskId = null;
+  renderTaskList();
+  showStatus('queue-message', 'Edit cancelled. The task was not changed.');
+}
+
+function saveTaskEdit(event, taskId) {
+  event.preventDefault();
+  const task = tasks.find((savedTask) => savedTask.id === taskId);
+  const titleInput = el('edit-title-' + taskId);
+  if (!task || !titleInput) {
+    return;
+  }
+
+  const text = normalizeWhitespace(titleInput.value);
+  if (!text) {
+    showStatus('queue-message', 'Add a short task title before saving.');
+    titleInput.focus();
+    return;
+  }
+  if (text.length > maxTitleLength) {
+    showStatus('queue-message', 'Keep task titles under ' + maxTitleLength + ' characters.');
+    titleInput.focus();
+    return;
+  }
+  if (getActiveTasks().some((candidate) => candidate.id !== taskId && candidate.text.toLocaleLowerCase() === text.toLocaleLowerCase())) {
+    showStatus('queue-message', 'That task is already in your active queue.');
+    titleInput.focus();
+    return;
+  }
+
+  task.text = text;
+  task.energy = el('edit-energy-' + taskId).value;
+  task.estimatedMinutes = estimateOptions.includes(Number(el('edit-estimate-' + taskId).value))
+    ? Number(el('edit-estimate-' + taskId).value)
+    : null;
+  task.firstStep = normalizeWhitespace(el('edit-first-step-' + taskId).value).slice(0, maxFirstStepLength) || null;
+  task.dueDate = normalizeDueDate(el('edit-due-date-' + taskId).value);
+  editingTaskId = null;
+  resetSuggestionChoice();
+  saveTasks();
+  render();
+  showStatus('queue-message', 'Task updated.');
+}
+
 function renderTaskList() {
   const taskList = el('task-list');
   taskList.innerHTML = '';
+  el('queue-filter').value = queueFilter;
+  el('queue-sort').value = queueSort;
+  el('queue-search').value = queueSearch;
+  const visibleTasks = getVisibleQueueTasks();
 
-  tasks.forEach((task) => {
+  visibleTasks.forEach((task) => {
     const item = document.createElement('li');
     const checkbox = document.createElement('input');
     const content = document.createElement('div');
@@ -586,6 +896,10 @@ function renderTaskList() {
     content.append(title);
 
     const details = getTaskContext(task);
+    const dueDate = formatDueDate(task.dueDate);
+    if (dueDate) {
+      details.push(dueDate);
+    }
     if (details.length > 0) {
       meta.className = 'task-meta';
       meta.textContent = details.join(' · ');
@@ -604,6 +918,10 @@ function renderTaskList() {
       waitingLabel.className = 'waiting-label';
       waitingLabel.textContent = 'Waiting on: ' + task.waitingOn;
       content.append(waitingLabel);
+    }
+
+    if (editingTaskId === task.id) {
+      content.replaceChildren(createTaskEditForm(task));
     }
 
     energy.className = 'energy-tag';
@@ -626,6 +944,12 @@ function renderTaskList() {
       actions.append(readyButton);
     }
 
+    if (editingTaskId !== task.id) {
+      const editButton = createTaskButton('Edit', 'edit-task', 'Edit ' + task.text);
+      editButton.addEventListener('click', () => beginTaskEdit(task.id));
+      actions.append(editButton);
+    }
+
     const deleteButton = createTaskButton('Delete', 'delete-task', 'Delete ' + task.text);
     deleteButton.addEventListener('click', () => deleteTask(task.id));
     actions.append(deleteButton);
@@ -634,28 +958,69 @@ function renderTaskList() {
     taskList.append(item);
   });
 
-  el('empty-state').hidden = tasks.length > 0;
+  el('empty-state').hidden = visibleTasks.length > 0;
+  el('empty-state').textContent = tasks.length === 0
+    ? 'Your queue is clear. Add one small task above.'
+    : 'No tasks match these queue controls.';
+  el('clear-completed').disabled = !tasks.some((task) => task.done);
 }
 
 function renderUndoDelete() {
   const undoPanel = el('undo-delete');
 
-  if (!lastDeletedTask) {
+  if (!lastUndo) {
     undoPanel.hidden = true;
     return;
   }
 
-  el('undo-message').textContent = 'Deleted “' + lastDeletedTask.task.text + '”.';
+  if (lastUndo.type === 'delete') {
+    el('undo-message').textContent = 'Deleted “' + lastUndo.task.text + '”.';
+  } else if (lastUndo.type === 'complete') {
+    el('undo-message').textContent = 'Marked “' + lastUndo.text + '” done.';
+  } else {
+    const label = lastUndo.items.length === 1 ? 'task' : 'tasks';
+    el('undo-message').textContent = 'Cleared ' + lastUndo.items.length + ' completed ' + label + '.';
+  }
   undoPanel.hidden = false;
 }
 
 function render() {
+  renderPersonalSettings();
   renderSuggestion();
   renderWaitingRoom();
   renderTaskList();
   renderTimer();
   renderUndoDelete();
   renderSessionHandoff();
+}
+
+function renderPersonalSettings() {
+  const hasWorkspaceName = Boolean(personalSettings.workspaceName);
+  el('workspace-label').textContent = hasWorkspaceName
+    ? personalSettings.workspaceName
+    : 'QueueClear';
+  el('workspace-name-input').value = personalSettings.workspaceName;
+  el('personal-note-input').value = personalSettings.personalNote;
+  el('focus-duration-input').value = String(personalSettings.focusMinutes);
+  el('personal-note').textContent = personalSettings.personalNote;
+  el('personal-note').hidden = !personalSettings.personalNote;
+}
+
+function saveSettingsFromForm() {
+  const previousDefaultFocusSeconds = getDefaultFocusSeconds();
+  personalSettings = normalizePersonalSettings({
+    workspaceName: el('workspace-name-input').value,
+    personalNote: el('personal-note-input').value,
+    focusMinutes: el('focus-duration-input').value,
+  });
+  savePersonalSettings();
+
+  if (focusTimer === null && focusSeconds === previousDefaultFocusSeconds) {
+    focusSeconds = getDefaultFocusSeconds();
+  }
+
+  render();
+  showStatus('data-message', 'Personal settings saved in this browser.');
 }
 
 function renderWaitingRoom() {
@@ -688,6 +1053,7 @@ function parkSuggestedTask() {
   }
 
   task.waitingOn = waitingOn;
+  resetSuggestionChoice();
   if (task.id === sessionReviewTaskId) {
     sessionReviewTaskId = null;
   }
@@ -705,6 +1071,7 @@ function makeTaskReady(taskId) {
 
   task.waitingOn = null;
   saveTasks();
+  resetSuggestionChoice();
   render();
   showNextStatus('Back in your ready queue.');
 }
@@ -795,9 +1162,11 @@ function handleTaskSubmit(event) {
     energy: el('energy-input').value,
     estimatedMinutes: el('estimated-minutes').value,
     firstStep: el('first-step-input').value,
+    dueDate: el('due-date-input').value,
   });
 
   tasks.push(task);
+  resetSuggestionChoice();
   saveTasks();
   titleInput.value = '';
   clearCaptureContext();
@@ -812,8 +1181,7 @@ function toggleTaskDone(taskId) {
     return;
   }
 
-  task.done = !task.done;
-  task.completedAt = task.done ? Date.now() : null;
+  setTaskDone(task, !task.done);
 
   if (task.id === focusTaskId && task.done) {
     stopFocus('Timer reset because the task was marked done.');
@@ -824,10 +1192,30 @@ function toggleTaskDone(taskId) {
   }
 
   saveTasks();
+  resetSuggestionChoice();
   render();
   showNextStatus(
     task.done ? 'Marked done. It moved out of your active queue.' : 'Back in your active queue.',
   );
+}
+
+function setTaskDone(task, done) {
+  const previousDone = task.done;
+  const previousCompletedAt = task.completedAt;
+  task.done = done;
+  task.completedAt = done ? Date.now() : null;
+
+  if (done && !previousDone) {
+    lastUndo = {
+      type: 'complete',
+      taskId: task.id,
+      text: task.text,
+      previousDone,
+      previousCompletedAt,
+    };
+  } else {
+    lastUndo = null;
+  }
 }
 
 function markSuggestedTaskDone() {
@@ -836,8 +1224,7 @@ function markSuggestedTaskDone() {
     return;
   }
 
-  task.done = true;
-  task.completedAt = Date.now();
+  setTaskDone(task, true);
 
   if (task.id === focusTaskId) {
     stopFocus('Timer reset because the task was marked done.');
@@ -848,8 +1235,21 @@ function markSuggestedTaskDone() {
   }
 
   saveTasks();
+  resetSuggestionChoice();
   render();
   showNextStatus('Marked done. It moved out of your active queue.');
+}
+
+function pickAnotherTask() {
+  const suggestion = getSuggestion();
+  if (suggestion.candidates.length < 2) {
+    showNextStatus('This is the only active task that matches right now.');
+    return;
+  }
+
+  suggestionOffset = (suggestionOffset + 1) % suggestion.candidates.length;
+  render();
+  showNextStatus('Here is another task that matches your current settings.');
 }
 
 function deleteTask(taskId) {
@@ -868,52 +1268,112 @@ function deleteTask(taskId) {
     sessionReviewTaskId = null;
   }
 
+  if (taskId === editingTaskId) {
+    editingTaskId = null;
+  }
+
   tasks = tasks.filter((task) => task.id !== taskId);
-  lastDeletedTask = {
+  lastUndo = {
+    type: 'delete',
     index: deletedIndex,
     task: deletedTask,
   };
   saveTasks();
+  resetSuggestionChoice();
   render();
   showNextStatus('Task deleted. Undo stays available until you refresh or delete another task.');
   el('undo-delete-task').focus();
 }
 
-function undoLastDelete() {
-  if (!lastDeletedTask) {
+function undoLastAction() {
+  if (!lastUndo) {
     return;
   }
 
-  if (tasks.some((task) => task.id === lastDeletedTask.task.id)) {
-    lastDeletedTask = null;
-    renderUndoDelete();
-    showNextStatus('That task is already back in your list.');
+  if (lastUndo.type === 'delete') {
+    if (tasks.some((task) => task.id === lastUndo.task.id)) {
+      lastUndo = null;
+      renderUndoDelete();
+      showNextStatus('That task is already back in your list.');
+      return;
+    }
+
+    const restoreIndex = Math.min(Math.max(lastUndo.index, 0), tasks.length);
+    const restoredTask = lastUndo.task;
+    tasks.splice(restoreIndex, 0, restoredTask);
+    lastUndo = null;
+    saveTasks();
+    render();
+    showNextStatus('Restored “' + restoredTask.text + '”.');
     return;
   }
 
-  const restoreIndex = Math.min(Math.max(lastDeletedTask.index, 0), tasks.length);
-  const restoredTask = lastDeletedTask.task;
-  tasks.splice(restoreIndex, 0, restoredTask);
-  lastDeletedTask = null;
+  if (lastUndo.type === 'complete') {
+    const task = tasks.find((candidate) => candidate.id === lastUndo.taskId);
+    if (task) {
+      task.done = lastUndo.previousDone;
+      task.completedAt = lastUndo.previousCompletedAt;
+    }
+    lastUndo = null;
+    saveTasks();
+    resetSuggestionChoice();
+    render();
+    showNextStatus('Task returned to your active queue.');
+    return;
+  }
+
+  lastUndo.items.forEach(({ index, task }) => {
+    tasks.splice(Math.min(index, tasks.length), 0, task);
+  });
+  lastUndo = null;
   saveTasks();
   render();
-  showNextStatus('Restored “' + restoredTask.text + '”.');
+  showNextStatus('Completed tasks restored.');
 }
 
-function getTomorrowMorning() {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(8, 0, 0, 0);
-  return tomorrow.getTime();
+function clearCompletedTasks() {
+  const items = tasks
+    .map((task, index) => ({ task, index }))
+    .filter(({ task }) => task.done);
+  if (items.length === 0) {
+    showStatus('queue-message', 'There are no completed tasks to clear.');
+    return;
+  }
+
+  tasks = tasks.filter((task) => !task.done);
+  lastUndo = { type: 'clear-completed', items };
+  editingTaskId = null;
+  saveTasks();
+  resetSuggestionChoice();
+  render();
+  showStatus('queue-message', 'Completed tasks cleared. Undo is available until another change or refresh.');
 }
 
-function snoozeSuggestedTask() {
+function getSnoozeTime(option) {
+  const date = new Date();
+  if (option === 'later') {
+    const laterToday = new Date(date);
+    laterToday.setHours(Math.min(date.getHours() + 3, 20), 0, 0, 0);
+    if (laterToday > date) {
+      return laterToday.getTime();
+    }
+    date.setDate(date.getDate() + 1);
+  } else if (option === 'next-week') {
+    date.setDate(date.getDate() + 7);
+  } else {
+    date.setDate(date.getDate() + 1);
+  }
+  date.setHours(8, 0, 0, 0);
+  return date.getTime();
+}
+
+function snoozeSuggestedTask(option) {
   const task = getSuggestedTask();
   if (!task) {
     return;
   }
 
-  task.snoozedUntil = getTomorrowMorning();
+  task.snoozedUntil = getSnoozeTime(option);
 
   if (task.id === focusTaskId) {
     stopFocus('Timer reset because this task was snoozed.');
@@ -924,8 +1384,9 @@ function snoozeSuggestedTask() {
   }
 
   saveTasks();
+  resetSuggestionChoice();
   render();
-  showNextStatus('Snoozed until tomorrow. It will return then and stays in your list.');
+  showNextStatus('Snoozed until ' + formatSnoozeTime(task.snoozedUntil) + '. It stays in your list.');
 }
 
 function wakeTask(taskId) {
@@ -936,6 +1397,7 @@ function wakeTask(taskId) {
 
   task.snoozedUntil = null;
   saveTasks();
+  resetSuggestionChoice();
   render();
   showNextStatus('Back in your list.');
 }
@@ -956,24 +1418,32 @@ function renderTimer() {
   const timerTask = focusTask || suggestedTask;
   const canResume = Boolean(focusTask && focusTimer === null && focusSeconds > 0);
 
+  const defaultFocusSeconds = getDefaultFocusSeconds();
+  el('timer-title').textContent = 'Focus for ' + personalSettings.focusMinutes + ' minutes';
   el('timer-display').textContent = formatFocusTime(focusSeconds);
   el('timer-task').textContent = timerTask
     ? 'For: ' + timerTask.text
     : 'Choose a task first.';
   el('start-focus').disabled = focusTimer !== null || (!suggestedTask && !focusTask);
-  el('start-focus').textContent = canResume ? 'Resume focus' : 'Start 10-minute focus';
+  el('start-focus').textContent = canResume
+    ? 'Resume focus'
+    : 'Start ' + personalSettings.focusMinutes + '-minute focus';
   el('start-focus').setAttribute(
     'aria-label',
     timerTask
-      ? (canResume ? 'Resume focus for ' : 'Start 10-minute focus for ') + timerTask.text
-      : 'Start 10-minute focus',
+      ? (canResume ? 'Resume focus for ' : 'Start ' + personalSettings.focusMinutes + '-minute focus for ') + timerTask.text
+      : 'Start ' + personalSettings.focusMinutes + '-minute focus',
   );
   el('pause-focus').disabled = focusTimer === null;
   el('pause-focus').setAttribute(
     'aria-label',
     focusTask ? 'Pause focus for ' + focusTask.text : 'Pause focus',
   );
-  el('reset-focus').disabled = focusTimer === null && focusSeconds === 600;
+  el('reset-focus').disabled = focusTimer === null && focusSeconds === defaultFocusSeconds;
+  el('end-focus').disabled = !focusTask && focusTimer === null;
+  document.title = focusTimer === null
+    ? defaultDocumentTitle
+    : formatFocusTime(focusSeconds) + ' — QueueClear';
 }
 
 function tickFocus() {
@@ -1010,7 +1480,7 @@ function startFocus() {
   }
 
   if (focusSeconds <= 0) {
-    focusSeconds = 600;
+    focusSeconds = getDefaultFocusSeconds();
   }
 
   focusTaskId = task.id;
@@ -1036,7 +1506,7 @@ function pauseFocus() {
 function stopFocus(message) {
   clearInterval(focusTimer);
   focusTimer = null;
-  focusSeconds = 600;
+  focusSeconds = getDefaultFocusSeconds();
   focusTaskId = null;
   sessionReviewTaskId = null;
   renderTimer();
@@ -1047,6 +1517,7 @@ function stopFocus(message) {
 function setCurrentEnergy() {
   currentEnergy = el('current-energy-input').value;
   saveCurrentEnergy();
+  resetSuggestionChoice();
   render();
   showNextStatus('Start here now matches your ' + currentEnergy + '-energy setting.');
 }
@@ -1055,12 +1526,23 @@ function setTimeAvailable() {
   const selectedMinutes = Number(el('time-available-input').value);
   timeAvailable = timeAvailableOptions.includes(selectedMinutes) ? selectedMinutes : null;
   saveTimeAvailable();
+  resetSuggestionChoice();
   render();
   showNextStatus(
     timeAvailable === null
       ? 'Start here can use tasks of any estimate.'
       : 'Start here will first look for tasks that fit ' + formatAvailableTime(timeAvailable) + '.',
   );
+}
+
+function updateQueueControls() {
+  const selectedFilter = el('queue-filter').value;
+  const selectedSort = el('queue-sort').value;
+  queueFilter = queueFilterOptions.includes(selectedFilter) ? selectedFilter : 'all';
+  queueSort = queueSortOptions.includes(selectedSort) ? selectedSort : 'suggested';
+  queueSearch = el('queue-search').value;
+  editingTaskId = null;
+  renderTaskList();
 }
 
 function applyTheme() {
@@ -1079,6 +1561,7 @@ function toggleTheme() {
 el('task-form').addEventListener('submit', handleTaskSubmit);
 el('current-energy-input').addEventListener('change', setCurrentEnergy);
 el('time-available-input').addEventListener('change', setTimeAvailable);
+el('save-personal-settings').addEventListener('click', saveSettingsFromForm);
 el('park-waiting').addEventListener('click', parkSuggestedTask);
 el('download-backup').addEventListener('click', downloadBackup);
 el('restore-backup').addEventListener('click', openRestorePicker);
@@ -1090,9 +1573,17 @@ el('pause-focus').addEventListener('click', pauseFocus);
 el('reset-focus').addEventListener('click', () => stopFocus('Timer reset.'));
 el('save-handoff').addEventListener('click', saveSessionHandoff);
 el('dismiss-handoff').addEventListener('click', dismissSessionHandoff);
-el('snooze-task').addEventListener('click', snoozeSuggestedTask);
+el('pick-another').addEventListener('click', pickAnotherTask);
+el('snooze-later').addEventListener('click', () => snoozeSuggestedTask('later'));
+el('snooze-tomorrow').addEventListener('click', () => snoozeSuggestedTask('tomorrow'));
+el('snooze-next-week').addEventListener('click', () => snoozeSuggestedTask('next-week'));
 el('complete-next').addEventListener('click', markSuggestedTaskDone);
-el('undo-delete-task').addEventListener('click', undoLastDelete);
+el('undo-delete-task').addEventListener('click', undoLastAction);
+el('clear-completed').addEventListener('click', clearCompletedTasks);
+el('queue-search').addEventListener('input', updateQueueControls);
+el('queue-filter').addEventListener('change', updateQueueControls);
+el('queue-sort').addEventListener('change', updateQueueControls);
+el('end-focus').addEventListener('click', () => stopFocus('Focus session ended.'));
 el('theme-toggle').addEventListener('click', toggleTheme);
 
 applyTheme();
