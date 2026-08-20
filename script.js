@@ -1,19 +1,38 @@
+import {
+  energyLevels,
+  estimateOptions,
+  focusDurationOptions,
+  maxFirstStepLength,
+  maxHandoffLength,
+  maxTitleLength,
+  maxWaitingOnLength,
+  normalizeDueDate,
+  normalizePersonalSettings,
+  normalizeTask,
+  normalizeTimestamp,
+  normalizeWhitespace,
+  priorityOptions,
+  recurrenceOptions,
+  subjectOptions,
+  maxChecklistItemLength,
+  maxChecklistItems,
+} from './queueclear-model.mjs';
+import { validateBackup } from './queueclear-recovery.mjs';
+
 const storageKey = 'queueclear.tasks.v2';
 const legacyStorageKey = 'queueclear.tasks.v1';
 const themeKey = 'queueclear.theme.v1';
 const currentEnergyKey = 'queueclear.current-energy.v1';
 const timeAvailableKey = 'queueclear.time-available.v1';
 const settingsKey = 'queueclear.settings.v1';
-const energyLevels = ['low', 'medium', 'high'];
-const estimateOptions = [5, 10, 15, 25, 45, 60];
+const todayPlanKey = 'queueclear.today-plan.v1';
+const routinesKey = 'queueclear.routines.v1';
+const historyKey = 'queueclear.history.v1';
 const timeAvailableOptions = [5, 15, 25, 45];
-const focusDurationOptions = [5, 10, 15, 25];
-const maxTitleLength = 110;
-const maxFirstStepLength = 180;
-const maxWaitingOnLength = 160;
-const maxHandoffLength = 180;
-const maxWorkspaceNameLength = 40;
-const maxPersonalNoteLength = 140;
+const maxRoutineNameLength = 60;
+const maxRoutineStepLength = 140;
+const maxTodayTasks = 5;
+const maxHistoryItems = 100;
 const defaultDocumentTitle = 'QueueClear — one task to start';
 const queueFilterOptions = [
   'all',
@@ -25,13 +44,17 @@ const queueFilterOptions = [
   'low',
   'medium',
   'high',
+  'important',
 ];
-const queueSortOptions = ['suggested', 'newest', 'oldest', 'shortest'];
+const queueSortOptions = ['suggested', 'newest', 'oldest', 'shortest', 'due-soon'];
 
 let tasks = readTasks();
 let currentEnergy = readCurrentEnergy();
 let timeAvailable = readTimeAvailable();
 let personalSettings = readPersonalSettings();
+let todayPlan = readTodayPlan();
+let routines = readRoutines();
+let historyItems = readHistory();
 let focusTimer = null;
 let focusSeconds = getDefaultFocusSeconds();
 let focusTaskId = null;
@@ -46,51 +69,6 @@ let queueSearch = '';
 const statusTimers = {};
 
 const el = (id) => document.getElementById(id);
-
-function normalizeWhitespace(value) {
-  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
-}
-
-function normalizeTimestamp(value) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function normalizeDueDate(value) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return null;
-  }
-
-  const [year, month, day] = value.split('-').map(Number);
-  const parsed = new Date(year, month - 1, day);
-  const isValid =
-    parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day;
-  return isValid ? value : null;
-}
-
-function normalizeTask(candidate) {
-  const text = normalizeWhitespace(candidate?.text);
-  const estimatedMinutes = Number(candidate?.estimatedMinutes);
-
-  if (!text) {
-    return null;
-  }
-
-  return {
-    id: typeof candidate.id === 'string' ? candidate.id : crypto.randomUUID(),
-    text,
-    energy: energyLevels.includes(candidate.energy) ? candidate.energy : 'medium',
-    done: Boolean(candidate.done),
-    createdAt: normalizeTimestamp(candidate.createdAt) ?? Date.now(),
-    estimatedMinutes: estimateOptions.includes(estimatedMinutes) ? estimatedMinutes : null,
-    firstStep: normalizeWhitespace(candidate.firstStep).slice(0, maxFirstStepLength) || null,
-    waitingOn: normalizeWhitespace(candidate.waitingOn).slice(0, maxWaitingOnLength) || null,
-    handoff: normalizeWhitespace(candidate.handoff).slice(0, maxHandoffLength) || null,
-    handoffAt: normalizeTimestamp(candidate.handoffAt),
-    snoozedUntil: normalizeTimestamp(candidate.snoozedUntil),
-    completedAt: normalizeTimestamp(candidate.completedAt),
-    dueDate: normalizeDueDate(candidate.dueDate),
-  };
-}
 
 function readTasks() {
   try {
@@ -126,18 +104,6 @@ function saveTimeAvailable() {
   localStorage.setItem(timeAvailableKey, timeAvailable === null ? '' : String(timeAvailable));
 }
 
-function normalizePersonalSettings(candidate) {
-  return {
-    workspaceName:
-      normalizeWhitespace(candidate?.workspaceName).slice(0, maxWorkspaceNameLength) || '',
-    personalNote:
-      normalizeWhitespace(candidate?.personalNote).slice(0, maxPersonalNoteLength) || '',
-    focusMinutes: focusDurationOptions.includes(Number(candidate?.focusMinutes))
-      ? Number(candidate.focusMinutes)
-      : 10,
-  };
-}
-
 function readPersonalSettings() {
   try {
     return normalizePersonalSettings(JSON.parse(localStorage.getItem(settingsKey) || '{}'));
@@ -150,11 +116,96 @@ function savePersonalSettings() {
   localStorage.setItem(settingsKey, JSON.stringify(personalSettings));
 }
 
+function normalizeTodayPlan(candidate) {
+  const taskIds = Array.isArray(candidate?.taskIds)
+    ? candidate.taskIds.filter((taskId) => typeof taskId === 'string')
+    : [];
+  return {
+    date: normalizeDueDate(candidate?.date) || getLocalDatePart(),
+    taskIds: [...new Set(taskIds)].slice(0, maxTodayTasks),
+  };
+}
+
+function readTodayPlan() {
+  try {
+    const plan = normalizeTodayPlan(JSON.parse(localStorage.getItem(todayPlanKey) || '{}'));
+    return plan.date === getLocalDatePart() ? plan : { date: getLocalDatePart(), taskIds: [] };
+  } catch {
+    return { date: getLocalDatePart(), taskIds: [] };
+  }
+}
+
+function saveTodayPlan() {
+  todayPlan.date = getLocalDatePart();
+  todayPlan.taskIds = todayPlan.taskIds.filter((taskId) => tasks.some((task) => task.id === taskId && !task.done));
+  localStorage.setItem(todayPlanKey, JSON.stringify(todayPlan));
+}
+
+function normalizeRoutine(candidate) {
+  const name = normalizeWhitespace(candidate?.name).slice(0, maxRoutineNameLength);
+  const steps = Array.isArray(candidate?.steps)
+    ? candidate.steps
+        .map((step) => normalizeWhitespace(step).slice(0, maxRoutineStepLength))
+        .filter(Boolean)
+        .slice(0, 12)
+    : [];
+  if (!name || steps.length === 0) {
+    return null;
+  }
+  return {
+    id: typeof candidate?.id === 'string' ? candidate.id : crypto.randomUUID(),
+    name,
+    steps,
+    createdAt: normalizeTimestamp(candidate?.createdAt) ?? Date.now(),
+  };
+}
+
+function readRoutines() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(routinesKey) || '[]');
+    return Array.isArray(saved) ? saved.map(normalizeRoutine).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRoutines() {
+  localStorage.setItem(routinesKey, JSON.stringify(routines));
+}
+
+function normalizeHistoryItem(candidate) {
+  const type = ['completed', 'focus-started', 'focus-finished', 'handoff'].includes(candidate?.type)
+    ? candidate.type
+    : null;
+  const text = normalizeWhitespace(candidate?.text).slice(0, maxFirstStepLength);
+  const createdAt = normalizeTimestamp(candidate?.createdAt);
+  return type && text && createdAt ? { type, text, createdAt } : null;
+}
+
+function readHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(historyKey) || '[]');
+    return Array.isArray(saved) ? saved.map(normalizeHistoryItem).filter(Boolean).slice(0, maxHistoryItems) : [];
+  } catch {
+    return [];
+  }
+}
+
+function recordHistory(type, text) {
+  const item = normalizeHistoryItem({ type, text, createdAt: Date.now() });
+  if (!item) {
+    return;
+  }
+  historyItems.unshift(item);
+  historyItems = historyItems.slice(0, maxHistoryItems);
+  localStorage.setItem(historyKey, JSON.stringify(historyItems));
+}
+
 function getDefaultFocusSeconds() {
   return personalSettings.focusMinutes * 60;
 }
 
-function createTask({ text, energy, estimatedMinutes, firstStep, dueDate }) {
+function createTask({ text, energy, estimatedMinutes, firstStep, dueDate, subject = 'general', priority = 'normal', recurrence = 'none', checklist = [] }) {
   return normalizeTask({
     id: crypto.randomUUID(),
     text,
@@ -169,6 +220,10 @@ function createTask({ text, energy, estimatedMinutes, firstStep, dueDate }) {
     snoozedUntil: null,
     completedAt: null,
     dueDate,
+    subject,
+    priority,
+    recurrence,
+    checklist,
   });
 }
 
@@ -321,6 +376,16 @@ function formatEnergy(energy) {
   return energy.charAt(0).toUpperCase() + energy.slice(1) + ' energy';
 }
 
+function formatSubject(subject) {
+  return subject === 'social-science'
+    ? 'Social science'
+    : subject.charAt(0).toUpperCase() + subject.slice(1);
+}
+
+function formatPriority(priority) {
+  return priority === 'soon' ? 'Needs attention soon' : priority.charAt(0).toUpperCase() + priority.slice(1);
+}
+
 function formatEstimate(minutes, longForm = false) {
   if (!minutes) {
     return '';
@@ -349,13 +414,16 @@ function getBackupFileName(date = new Date()) {
 
 function buildBackup() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     tasks,
     theme: getThemePreference(),
     currentEnergy,
     timeAvailable,
     personalSettings,
+    todayPlan,
+    routines,
+    historyItems,
   };
 }
 
@@ -375,81 +443,6 @@ function downloadBackup() {
   showStatus('data-message', 'Backup downloaded.');
 }
 
-function hasOwnProperty(object, property) {
-  return Object.prototype.hasOwnProperty.call(object, property);
-}
-
-function getRestoredPreference(backup, key, isValid, fallback) {
-  if (!hasOwnProperty(backup, key)) {
-    return { value: fallback, included: false };
-  }
-
-  if (!isValid(backup[key])) {
-    throw new Error('This backup has an unsupported ' + key + ' preference.');
-  }
-
-  return { value: backup[key], included: true };
-}
-
-function validateBackup(candidate) {
-  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
-    throw new Error('This file is not a QueueClear backup.');
-  }
-
-  if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.tasks)) {
-    throw new Error('This backup has an unsupported QueueClear structure.');
-  }
-
-  const restoredTasks = candidate.tasks.map(normalizeTask);
-  if (restoredTasks.some((task) => task === null)) {
-    throw new Error('This backup contains a task QueueClear cannot recover safely.');
-  }
-
-  const taskIds = new Set(restoredTasks.map((task) => task.id));
-  if (taskIds.size !== restoredTasks.length) {
-    throw new Error('This backup contains duplicate task IDs.');
-  }
-
-  const theme = getRestoredPreference(
-    candidate,
-    'theme',
-    (value) => value === 'paper' || value === 'calm',
-    'paper',
-  );
-  const energy = getRestoredPreference(
-    candidate,
-    'currentEnergy',
-    (value) => energyLevels.includes(value),
-    'medium',
-  );
-  const availableTime = getRestoredPreference(
-    candidate,
-    'timeAvailable',
-    (value) => value === null || timeAvailableOptions.includes(value),
-    null,
-  );
-  const settings = getRestoredPreference(
-    candidate,
-    'personalSettings',
-    (value) =>
-      value &&
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
-      typeof value.workspaceName === 'string' &&
-      typeof value.personalNote === 'string' &&
-      focusDurationOptions.includes(Number(value.focusMinutes)),
-    normalizePersonalSettings({}),
-  );
-
-  return {
-    tasks: restoredTasks,
-    theme,
-    currentEnergy: energy,
-    timeAvailable: availableTime,
-    personalSettings: settings,
-  };
-}
-
 function formatRestorePreference(label, preference, fallbackLabel) {
   return preference.included
     ? label + ': saved'
@@ -465,9 +458,91 @@ function renderRestorePreview(backup) {
     formatRestorePreference('Energy', backup.currentEnergy, 'medium'),
     formatRestorePreference('Available time', backup.timeAvailable, 'no limit'),
     formatRestorePreference('Personal settings', backup.personalSettings, 'QueueClear defaults'),
+    formatRestorePreference('Today plan', backup.todayPlan, 'empty plan'),
+    formatRestorePreference('Routines', backup.routines, 'none'),
+    formatRestorePreference('History', backup.historyItems, 'none'),
   ].join(' ');
+  renderRestoreTaskOptions(backup);
+  renderRestorePreferenceOptions(backup);
+  el('restore-warning').textContent =
+    'Replacing current data removes your current QueueClear tasks and saved settings in this browser. Adding selected items keeps current data and skips active title duplicates.';
   el('restore-preview').hidden = false;
   el('confirm-restore').focus();
+}
+
+function getRestoreTaskCheckboxes() {
+  return Array.from(document.querySelectorAll('input[name="restore-task"]'));
+}
+
+function renderRestoreTaskOptions(backup) {
+  const options = el('restore-task-options');
+  options.replaceChildren();
+  backup.tasks.forEach((task) => {
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    const text = document.createElement('span');
+    label.className = 'restore-check';
+    input.type = 'checkbox';
+    input.name = 'restore-task';
+    input.value = task.id;
+    input.checked = true;
+    text.textContent = task.text;
+    label.append(input, text);
+    options.append(label);
+  });
+  el('restore-select-all').checked = backup.tasks.length > 0;
+}
+
+function renderRestorePreferenceOptions(backup) {
+  const options = el('restore-preference-options');
+  options.replaceChildren();
+  const preferences = [
+    ['theme', 'Theme', backup.theme.included],
+    ['currentEnergy', 'Current energy', backup.currentEnergy.included],
+    ['timeAvailable', 'Available time', backup.timeAvailable.included],
+    ['personalSettings', 'Personal settings', backup.personalSettings.included],
+    ['todayPlan', 'Today’s plan', backup.todayPlan.included],
+    ['routines', 'Study routines', backup.routines.included],
+    ['historyItems', 'Private history', backup.historyItems.included],
+  ];
+  preferences.forEach(([key, labelText, included]) => {
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    label.className = 'restore-check';
+    input.type = 'checkbox';
+    input.name = 'restore-preference';
+    input.value = key;
+    input.checked = included;
+    input.disabled = !included;
+    label.append(input, document.createTextNode(labelText + (included ? '' : ' (not in this backup)')));
+    options.append(label);
+  });
+}
+
+function getSelectedRestoreTasks() {
+  const selectedIds = new Set(
+    getRestoreTaskCheckboxes().filter((input) => input.checked).map((input) => input.value),
+  );
+  return pendingRestore ? pendingRestore.tasks.filter((task) => selectedIds.has(task.id)) : [];
+}
+
+function getSelectedRestorePreferences() {
+  return new Set(
+    Array.from(document.querySelectorAll('input[name="restore-preference"]'))
+      .filter((input) => input.checked && !input.disabled)
+      .map((input) => input.value),
+  );
+}
+
+function syncRestoreSelectAll() {
+  const checkboxes = getRestoreTaskCheckboxes();
+  el('restore-select-all').checked = checkboxes.length > 0 && checkboxes.every((input) => input.checked);
+}
+
+function setAllRestoreTasksSelected() {
+  getRestoreTaskCheckboxes().forEach((input) => {
+    input.checked = el('restore-select-all').checked;
+  });
 }
 
 function clearRestorePreview({ returnFocus = false } = {}) {
@@ -502,7 +577,13 @@ async function previewRestoreBackup(event) {
       throw new Error('That file is not valid JSON. Choose a QueueClear backup file.');
     }
 
-    pendingRestore = validateBackup(parsedBackup);
+    pendingRestore = validateBackup(parsedBackup, {
+      timeAvailableOptions,
+      fallbackTodayPlan: { date: getLocalDatePart(), taskIds: [] },
+      normalizeTodayPlan,
+      normalizeRoutine,
+      normalizeHistoryItem,
+    });
     renderRestorePreview(pendingRestore);
   } catch (error) {
     clearRestorePreview();
@@ -528,6 +609,9 @@ function restoreBackup() {
   currentEnergy = pendingRestore.currentEnergy.value;
   timeAvailable = pendingRestore.timeAvailable.value;
   personalSettings = pendingRestore.personalSettings.value;
+  todayPlan = pendingRestore.todayPlan.value;
+  routines = pendingRestore.routines.value;
+  historyItems = pendingRestore.historyItems.value;
   localStorage.setItem(storageKey, JSON.stringify(tasks));
   localStorage.removeItem(legacyStorageKey);
   localStorage.setItem(themeKey, pendingRestore.theme.value);
@@ -537,6 +621,9 @@ function restoreBackup() {
     timeAvailable === null ? '' : String(timeAvailable),
   );
   savePersonalSettings();
+  saveTodayPlan();
+  saveRoutines();
+  localStorage.setItem(historyKey, JSON.stringify(historyItems));
 
   clearInterval(focusTimer);
   focusTimer = null;
@@ -548,6 +635,63 @@ function restoreBackup() {
   applyTheme();
   render();
   showStatus('data-message', 'Backup restored in this browser.');
+  el('restore-backup').focus();
+}
+
+function recoverSelectedBackupItems() {
+  if (!pendingRestore) {
+    showStatus('data-message', 'Choose a valid backup before recovering items.');
+    return;
+  }
+
+  const selectedTasks = getSelectedRestoreTasks();
+  const selectedPreferences = getSelectedRestorePreferences();
+  const previousDefaultFocusSeconds = getDefaultFocusSeconds();
+  const activeTitles = new Set(getActiveTasks().map((task) => task.text.toLocaleLowerCase()));
+  const existingIds = new Set(tasks.map((task) => task.id));
+  const recoveredTasks = [];
+  let skipped = 0;
+
+  selectedTasks.forEach((task) => {
+    if (!task.done && activeTitles.has(task.text.toLocaleLowerCase())) {
+      skipped += 1;
+      return;
+    }
+    const recovered = { ...task, id: existingIds.has(task.id) ? crypto.randomUUID() : task.id };
+    existingIds.add(recovered.id);
+    if (!recovered.done) {
+      activeTitles.add(recovered.text.toLocaleLowerCase());
+    }
+    recoveredTasks.push(recovered);
+  });
+
+  tasks.push(...recoveredTasks);
+  if (selectedPreferences.has('theme')) localStorage.setItem(themeKey, pendingRestore.theme.value);
+  if (selectedPreferences.has('currentEnergy')) currentEnergy = pendingRestore.currentEnergy.value;
+  if (selectedPreferences.has('timeAvailable')) timeAvailable = pendingRestore.timeAvailable.value;
+  if (selectedPreferences.has('personalSettings')) personalSettings = pendingRestore.personalSettings.value;
+  if (selectedPreferences.has('todayPlan')) todayPlan = pendingRestore.todayPlan.value;
+  if (selectedPreferences.has('routines')) routines = pendingRestore.routines.value;
+  if (selectedPreferences.has('historyItems')) historyItems = pendingRestore.historyItems.value;
+
+  if (focusTimer === null && focusSeconds === previousDefaultFocusSeconds) {
+    focusSeconds = getDefaultFocusSeconds();
+  }
+
+  saveTasks();
+  saveCurrentEnergy();
+  saveTimeAvailable();
+  savePersonalSettings();
+  saveTodayPlan();
+  saveRoutines();
+  localStorage.setItem(historyKey, JSON.stringify(historyItems));
+  clearRestorePreview();
+  applyTheme();
+  resetSuggestionChoice();
+  render();
+  const recoveredLabel = recoveredTasks.length + ' task' + (recoveredTasks.length === 1 ? '' : 's');
+  const skippedLabel = skipped ? ' ' + skipped + ' active duplicate' + (skipped === 1 ? ' was' : 's were') + ' skipped.' : '';
+  showStatus('data-message', 'Recovered ' + recoveredLabel + ' without replacing your current queue.' + skippedLabel);
   el('restore-backup').focus();
 }
 
@@ -599,6 +743,9 @@ function clearCaptureContext() {
   el('estimated-minutes').value = '';
   el('first-step-input').value = '';
   el('due-date-input').value = '';
+  el('subject-input').value = 'general';
+  el('priority-input').value = 'normal';
+  el('recurrence-input').value = 'none';
 }
 
 function renderSuggestion() {
@@ -622,6 +769,7 @@ function renderSuggestion() {
     el('pick-another').disabled = true;
     el('snooze-options').hidden = true;
     el('complete-next').disabled = true;
+    el('add-suggested-to-today').disabled = true;
     return;
   }
 
@@ -649,6 +797,7 @@ function renderSuggestion() {
   el('pick-another').disabled = recommendation.candidates.length < 2;
   el('snooze-options').hidden = false;
   el('complete-next').disabled = false;
+  el('add-suggested-to-today').disabled = todayPlan.taskIds.includes(suggestion.id) || todayPlan.taskIds.length >= maxTodayTasks;
 }
 
 function createTaskButton(label, className, ariaLabel) {
@@ -711,7 +860,16 @@ function matchesQueueFilter(task) {
   if (queueFilter === 'due-today') {
     return !task.done && isDueToday(task);
   }
+  if (queueFilter === 'important') {
+    return !task.done && (task.priority === 'important' || task.priority === 'soon');
+  }
   return task.energy === queueFilter;
+}
+
+function compareByDueDate(first, second) {
+  const firstDue = first.dueDate || '9999-12-31';
+  const secondDue = second.dueDate || '9999-12-31';
+  return firstDue.localeCompare(secondDue) || first.createdAt - second.createdAt;
 }
 
 function getSuggestedQueueOrder() {
@@ -736,6 +894,9 @@ function getVisibleQueueTasks() {
   if (queueSort === 'shortest') {
     return queueTasks.slice().sort(compareByEstimateThenQueueOrder);
   }
+  if (queueSort === 'due-soon') {
+    return queueTasks.slice().sort(compareByDueDate);
+  }
 
   const visibleIds = new Set(queueTasks.map((task) => task.id));
   return getSuggestedQueueOrder().filter((task) => visibleIds.has(task.id));
@@ -751,6 +912,91 @@ function createEditField(labelText, input) {
   return field;
 }
 
+function createSelectInput(id, options, selected, labelForOption) {
+  const select = document.createElement('select');
+  select.id = id;
+  options.forEach((value) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = labelForOption(value);
+    option.selected = value === selected;
+    select.append(option);
+  });
+  return select;
+}
+
+function toggleChecklistItem(taskId, itemId) {
+  const task = tasks.find((candidate) => candidate.id === taskId);
+  const item = task?.checklist.find((candidate) => candidate.id === itemId);
+  if (!item) return;
+  item.done = !item.done;
+  saveTasks();
+  renderTaskList();
+}
+
+function addChecklistItem(event, taskId) {
+  event.preventDefault();
+  const task = tasks.find((candidate) => candidate.id === taskId);
+  const input = el('checklist-input-' + taskId);
+  const text = normalizeWhitespace(input?.value).slice(0, maxChecklistItemLength);
+  if (!task || !text) {
+    showStatus('queue-message', 'Add a short checklist item first.');
+    return;
+  }
+  if (task.checklist.length >= maxChecklistItems) {
+    showStatus('queue-message', 'Keep a checklist to ' + maxChecklistItems + ' items so it stays usable.');
+    return;
+  }
+  task.checklist.push({ id: crypto.randomUUID(), text, done: false });
+  saveTasks();
+  renderTaskList();
+}
+
+function createChecklist(task) {
+  const details = document.createElement('details');
+  const summary = document.createElement('summary');
+  const list = document.createElement('ul');
+  const form = document.createElement('form');
+  const field = document.createElement('div');
+  const label = document.createElement('label');
+  const input = document.createElement('input');
+  const button = document.createElement('button');
+  const completeCount = task.checklist.filter((item) => item.done).length;
+  details.className = 'task-checklist';
+  summary.textContent = task.checklist.length
+    ? 'Checklist: ' + completeCount + ' of ' + task.checklist.length
+    : 'Add a checklist';
+  list.className = 'checklist-items';
+  task.checklist.forEach((item) => {
+    const listItem = document.createElement('li');
+    const check = document.createElement('input');
+    const itemLabel = document.createElement('label');
+    check.type = 'checkbox';
+    check.checked = item.done;
+    check.id = 'checklist-' + task.id + '-' + item.id;
+    itemLabel.htmlFor = check.id;
+    itemLabel.textContent = item.text;
+    check.addEventListener('change', () => toggleChecklistItem(task.id, item.id));
+    listItem.append(check, itemLabel);
+    list.append(listItem);
+  });
+  form.className = 'checklist-form';
+  label.htmlFor = 'checklist-input-' + task.id;
+  label.textContent = 'New checklist item';
+  input.id = 'checklist-input-' + task.id;
+  input.maxLength = maxChecklistItemLength;
+  input.placeholder = 'e.g. Find question 1';
+  field.className = 'field';
+  field.append(label, input);
+  button.type = 'submit';
+  button.className = 'text-button';
+  button.textContent = 'Add item';
+  form.append(field, button);
+  form.addEventListener('submit', (event) => addChecklistItem(event, task.id));
+  details.append(summary, list, form);
+  return details;
+}
+
 function createTaskEditForm(task) {
   const form = document.createElement('form');
   const titleInput = document.createElement('input');
@@ -758,6 +1004,14 @@ function createTaskEditForm(task) {
   const estimateInput = document.createElement('select');
   const firstStepInput = document.createElement('input');
   const dueDateInput = document.createElement('input');
+  const subjectInput = createSelectInput('edit-subject-' + task.id, subjectOptions, task.subject, formatSubject);
+  const priorityInput = createSelectInput('edit-priority-' + task.id, priorityOptions, task.priority, formatPriority);
+  const recurrenceInput = createSelectInput(
+    'edit-recurrence-' + task.id,
+    recurrenceOptions,
+    task.recurrence,
+    (value) => value === 'weekly' ? 'Repeat weekly after completion' : 'Does not repeat',
+  );
   const saveButton = document.createElement('button');
   const cancelButton = document.createElement('button');
   const suffix = task.id;
@@ -806,6 +1060,9 @@ function createTaskEditForm(task) {
     createEditField('Estimated time', estimateInput),
     createEditField('First step', firstStepInput),
     createEditField('Due date', dueDateInput),
+    createEditField('Subject or area', subjectInput),
+    createEditField('How soon does it matter?', priorityInput),
+    createEditField('Repeat', recurrenceInput),
     saveButton,
     cancelButton,
   );
@@ -860,6 +1117,15 @@ function saveTaskEdit(event, taskId) {
     : null;
   task.firstStep = normalizeWhitespace(el('edit-first-step-' + taskId).value).slice(0, maxFirstStepLength) || null;
   task.dueDate = normalizeDueDate(el('edit-due-date-' + taskId).value);
+  task.subject = subjectOptions.includes(el('edit-subject-' + taskId).value)
+    ? el('edit-subject-' + taskId).value
+    : 'general';
+  task.priority = priorityOptions.includes(el('edit-priority-' + taskId).value)
+    ? el('edit-priority-' + taskId).value
+    : 'normal';
+  task.recurrence = recurrenceOptions.includes(el('edit-recurrence-' + taskId).value)
+    ? el('edit-recurrence-' + taskId).value
+    : 'none';
   editingTaskId = null;
   resetSuggestionChoice();
   saveTasks();
@@ -896,6 +1162,7 @@ function renderTaskList() {
     content.append(title);
 
     const details = getTaskContext(task);
+    details.unshift(formatSubject(task.subject), formatPriority(task.priority));
     const dueDate = formatDueDate(task.dueDate);
     if (dueDate) {
       details.push(dueDate);
@@ -918,6 +1185,17 @@ function renderTaskList() {
       waitingLabel.className = 'waiting-label';
       waitingLabel.textContent = 'Waiting on: ' + task.waitingOn;
       content.append(waitingLabel);
+    }
+
+    if (!task.done) {
+      content.append(createChecklist(task));
+    }
+
+    if (task.recurrence === 'weekly') {
+      const repeatLabel = document.createElement('span');
+      repeatLabel.className = 'task-meta';
+      repeatLabel.textContent = 'Repeats weekly after completion';
+      content.append(repeatLabel);
     }
 
     if (editingTaskId === task.id) {
@@ -945,6 +1223,12 @@ function renderTaskList() {
     }
 
     if (editingTaskId !== task.id) {
+      if (!task.done && !todayPlan.taskIds.includes(task.id)) {
+        const todayButton = createTaskButton('Add to today', 'add-to-today', 'Add ' + task.text + ' to today’s plan');
+        todayButton.disabled = todayPlan.taskIds.length >= maxTodayTasks;
+        todayButton.addEventListener('click', () => addTaskToToday(task.id));
+        actions.append(todayButton);
+      }
       const editButton = createTaskButton('Edit', 'edit-task', 'Edit ' + task.text);
       editButton.addEventListener('click', () => beginTaskEdit(task.id));
       actions.append(editButton);
@@ -984,14 +1268,234 @@ function renderUndoDelete() {
   undoPanel.hidden = false;
 }
 
+function getTodayTasks() {
+  return todayPlan.taskIds
+    .map((taskId) => tasks.find((task) => task.id === taskId && !task.done))
+    .filter(Boolean);
+}
+
+function addTaskToToday(taskId) {
+  const task = tasks.find((candidate) => candidate.id === taskId && !candidate.done);
+  if (!task) {
+    return;
+  }
+  if (todayPlan.taskIds.includes(taskId)) {
+    showStatus('queue-message', 'That task is already in today’s plan.');
+    return;
+  }
+  if (todayPlan.taskIds.length >= maxTodayTasks) {
+    showStatus('queue-message', 'Keep today to ' + maxTodayTasks + ' tasks. Remove one before adding another.');
+    return;
+  }
+  todayPlan.taskIds.push(taskId);
+  saveTodayPlan();
+  render();
+  showNextStatus('Added to today’s plan. The rest of your queue stays in the background.');
+}
+
+function moveTodayTask(taskId, direction) {
+  const index = todayPlan.taskIds.indexOf(taskId);
+  const nextIndex = index + direction;
+  if (index === -1 || nextIndex < 0 || nextIndex >= todayPlan.taskIds.length) {
+    return;
+  }
+  [todayPlan.taskIds[index], todayPlan.taskIds[nextIndex]] = [
+    todayPlan.taskIds[nextIndex],
+    todayPlan.taskIds[index],
+  ];
+  saveTodayPlan();
+  render();
+  showStatus('queue-message', 'Today’s plan reordered.');
+}
+
+function removeTodayTask(taskId) {
+  todayPlan.taskIds = todayPlan.taskIds.filter((candidateId) => candidateId !== taskId);
+  saveTodayPlan();
+  render();
+  showStatus('queue-message', 'Removed from today’s plan. The task is still safe in your queue.');
+}
+
+function renderTodayPlan() {
+  saveTodayPlan();
+  const plan = getTodayTasks();
+  const container = el('today-plan');
+  container.replaceChildren();
+  const estimatedMinutes = plan.reduce((total, task) => total + (task.estimatedMinutes || 0), 0);
+  const unestimated = plan.filter((task) => task.estimatedMinutes === null).length;
+  el('today-count').textContent = plan.length + ' of ' + maxTodayTasks + ' chosen · ' + estimatedMinutes + ' min' + (unestimated ? ' + ' + unestimated + ' unestimated' : '');
+  el('today-empty').hidden = plan.length > 0;
+
+  plan.forEach((task, index) => {
+    const item = document.createElement('div');
+    const content = document.createElement('div');
+    const title = document.createElement('span');
+    const meta = document.createElement('span');
+    const actions = document.createElement('div');
+    item.className = 'today-item';
+    title.className = 'today-task-title';
+    title.textContent = (index + 1) + '. ' + task.text;
+    meta.className = 'today-task-meta';
+    meta.textContent = [formatSubject(task.subject), formatPriority(task.priority), formatEnergy(task.energy), formatEstimate(task.estimatedMinutes)].filter(Boolean).join(' · ');
+    content.append(title, meta);
+    actions.className = 'today-actions';
+    const up = createTaskButton('Move up', 'move-today-up', 'Move ' + task.text + ' earlier in today’s plan');
+    up.disabled = index === 0;
+    up.addEventListener('click', () => moveTodayTask(task.id, -1));
+    const down = createTaskButton('Move down', 'move-today-down', 'Move ' + task.text + ' later in today’s plan');
+    down.disabled = index === plan.length - 1;
+    down.addEventListener('click', () => moveTodayTask(task.id, 1));
+    const remove = createTaskButton('Remove', 'remove-today', 'Remove ' + task.text + ' from today’s plan');
+    remove.addEventListener('click', () => removeTodayTask(task.id));
+    actions.append(up, down, remove);
+    item.append(content, actions);
+    container.append(item);
+  });
+}
+
+function renderRoutines() {
+  const container = el('routine-list');
+  container.replaceChildren();
+  el('routine-empty').hidden = routines.length > 0;
+  routines.forEach((routine) => {
+    const item = document.createElement('article');
+    const name = document.createElement('span');
+    const steps = document.createElement('ol');
+    const actions = document.createElement('div');
+    const stepForm = document.createElement('form');
+    const stepField = document.createElement('div');
+    const stepLabel = document.createElement('label');
+    const stepInput = document.createElement('input');
+    const stepButton = document.createElement('button');
+    item.className = 'routine-item';
+    name.className = 'routine-name';
+    name.textContent = routine.name;
+    steps.className = 'routine-step-list';
+    routine.steps.forEach((step) => {
+      const stepItem = document.createElement('li');
+      stepItem.textContent = step;
+      steps.append(stepItem);
+    });
+    actions.className = 'routine-actions';
+    const start = createTaskButton('Add steps to queue', 'start-routine', 'Add ' + routine.name + ' steps to the queue');
+    start.addEventListener('click', () => startRoutine(routine.id));
+    const remove = createTaskButton('Delete routine', 'delete-routine', 'Delete ' + routine.name + ' routine');
+    remove.addEventListener('click', () => deleteRoutine(routine.id));
+    actions.append(start, remove);
+    stepForm.className = 'routine-step-form';
+    stepLabel.htmlFor = 'routine-step-' + routine.id;
+    stepLabel.textContent = 'Add another step';
+    stepInput.id = 'routine-step-' + routine.id;
+    stepInput.maxLength = maxRoutineStepLength;
+    stepInput.placeholder = 'Keep the next step short';
+    stepField.className = 'field';
+    stepField.append(stepLabel, stepInput);
+    stepButton.className = 'text-button';
+    stepButton.type = 'submit';
+    stepButton.textContent = 'Add step';
+    stepForm.append(stepField, stepButton);
+    stepForm.addEventListener('submit', (event) => addRoutineStep(event, routine.id));
+    item.append(name, steps, actions, stepForm);
+    container.append(item);
+  });
+}
+
+function renderHistory() {
+  const list = el('history-list');
+  list.replaceChildren();
+  el('history-empty').hidden = historyItems.length > 0;
+  historyItems.forEach((entry) => {
+    const item = document.createElement('li');
+    const label = document.createElement('span');
+    const meta = document.createElement('span');
+    item.className = 'history-item';
+    const prefix = entry.type === 'completed'
+      ? 'Completed: '
+      : entry.type === 'focus-started'
+        ? 'Focus started: '
+        : entry.type === 'focus-finished'
+          ? 'Focus finished: '
+          : 'Handoff saved: ';
+    label.textContent = prefix + entry.text;
+    meta.className = 'history-meta';
+    meta.textContent = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.createdAt));
+    item.append(label, meta);
+    list.append(item);
+  });
+}
+
+function handleRoutineSubmit(event) {
+  event.preventDefault();
+  const name = normalizeWhitespace(el('routine-name-input').value).slice(0, maxRoutineNameLength);
+  const firstStep = normalizeWhitespace(el('routine-step-input').value).slice(0, maxRoutineStepLength);
+  if (!name || !firstStep) {
+    showStatus('routine-message', 'Give the routine a name and one small first step.');
+    return;
+  }
+  routines.push({ id: crypto.randomUUID(), name, steps: [firstStep], createdAt: Date.now() });
+  saveRoutines();
+  el('routine-name-input').value = '';
+  el('routine-step-input').value = '';
+  renderRoutines();
+  showStatus('routine-message', 'Routine saved in this browser. Add steps whenever you need to.');
+}
+
+function addRoutineStep(event, routineId) {
+  event.preventDefault();
+  const routine = routines.find((candidate) => candidate.id === routineId);
+  const input = el('routine-step-' + routineId);
+  const step = normalizeWhitespace(input?.value).slice(0, maxRoutineStepLength);
+  if (!routine || !step) {
+    showStatus('routine-message', 'Add a short step first.');
+    return;
+  }
+  if (routine.steps.length >= 12) {
+    showStatus('routine-message', 'Keep a routine to 12 steps so it stays usable.');
+    return;
+  }
+  routine.steps.push(step);
+  saveRoutines();
+  renderRoutines();
+  showStatus('routine-message', 'Step added to ' + routine.name + '.');
+}
+
+function startRoutine(routineId) {
+  const routine = routines.find((candidate) => candidate.id === routineId);
+  if (!routine) {
+    return;
+  }
+  const created = routine.steps
+    .map((step) => createTask({ text: routine.name + ' — ' + step, energy: 'medium', estimatedMinutes: null, firstStep: step, dueDate: null }))
+    .filter((task) => !hasDuplicateActiveTitle(task.text));
+  if (created.length === 0) {
+    showStatus('routine-message', 'Those routine steps are already active in your queue.');
+    return;
+  }
+  tasks.push(...created);
+  saveTasks();
+  resetSuggestionChoice();
+  render();
+  showStatus('routine-message', created.length + ' routine step' + (created.length === 1 ? '' : 's') + ' added to your queue.');
+}
+
+function deleteRoutine(routineId) {
+  const routine = routines.find((candidate) => candidate.id === routineId);
+  routines = routines.filter((candidate) => candidate.id !== routineId);
+  saveRoutines();
+  renderRoutines();
+  showStatus('routine-message', routine ? 'Deleted ' + routine.name + '. It did not change your tasks.' : 'Routine deleted.');
+}
+
 function render() {
   renderPersonalSettings();
   renderSuggestion();
+  renderTodayPlan();
   renderWaitingRoom();
   renderTaskList();
   renderTimer();
   renderUndoDelete();
   renderSessionHandoff();
+  renderRoutines();
+  renderHistory();
 }
 
 function renderPersonalSettings() {
@@ -1112,6 +1616,7 @@ function saveSessionHandoff() {
 
   task.handoff = handoff;
   task.handoffAt = Date.now();
+  recordHistory('handoff', task.text + ' — ' + handoff);
   sessionReviewTaskId = null;
   saveTasks();
   render();
@@ -1163,6 +1668,9 @@ function handleTaskSubmit(event) {
     estimatedMinutes: el('estimated-minutes').value,
     firstStep: el('first-step-input').value,
     dueDate: el('due-date-input').value,
+    subject: el('subject-input').value,
+    priority: el('priority-input').value,
+    recurrence: el('recurrence-input').value,
   });
 
   tasks.push(task);
@@ -1206,13 +1714,36 @@ function setTaskDone(task, done) {
   task.completedAt = done ? Date.now() : null;
 
   if (done && !previousDone) {
+    recordHistory('completed', task.text);
+    let recurrenceTaskId = null;
     lastUndo = {
       type: 'complete',
       taskId: task.id,
       text: task.text,
       previousDone,
       previousCompletedAt,
+      recurrenceTaskId,
     };
+    if (task.recurrence === 'weekly') {
+      const nextDate = task.dueDate ? new Date(task.dueDate + 'T12:00:00') : new Date();
+      nextDate.setDate(nextDate.getDate() + 7);
+      const nextTask = createTask({
+        text: task.text,
+        energy: task.energy,
+        estimatedMinutes: task.estimatedMinutes,
+        firstStep: task.firstStep,
+        dueDate: getLocalDatePart(nextDate),
+        subject: task.subject,
+        priority: task.priority,
+        recurrence: task.recurrence,
+        checklist: task.checklist.map((item) => ({ id: crypto.randomUUID(), text: item.text, done: false })),
+      });
+      if (!hasDuplicateActiveTitle(nextTask.text)) {
+        tasks.push(nextTask);
+        recurrenceTaskId = nextTask.id;
+        lastUndo.recurrenceTaskId = recurrenceTaskId;
+      }
+    }
   } else {
     lastUndo = null;
   }
@@ -1273,12 +1804,14 @@ function deleteTask(taskId) {
   }
 
   tasks = tasks.filter((task) => task.id !== taskId);
+  todayPlan.taskIds = todayPlan.taskIds.filter((candidateId) => candidateId !== taskId);
   lastUndo = {
     type: 'delete',
     index: deletedIndex,
     task: deletedTask,
   };
   saveTasks();
+  saveTodayPlan();
   resetSuggestionChoice();
   render();
   showNextStatus('Task deleted. Undo stays available until you refresh or delete another task.');
@@ -1314,6 +1847,9 @@ function undoLastAction() {
       task.done = lastUndo.previousDone;
       task.completedAt = lastUndo.previousCompletedAt;
     }
+    if (lastUndo.recurrenceTaskId) {
+      tasks = tasks.filter((candidate) => candidate.id !== lastUndo.recurrenceTaskId);
+    }
     lastUndo = null;
     saveTasks();
     resetSuggestionChoice();
@@ -1341,9 +1877,11 @@ function clearCompletedTasks() {
   }
 
   tasks = tasks.filter((task) => !task.done);
+  todayPlan.taskIds = todayPlan.taskIds.filter((taskId) => tasks.some((task) => task.id === taskId));
   lastUndo = { type: 'clear-completed', items };
   editingTaskId = null;
   saveTasks();
+  saveTodayPlan();
   resetSuggestionChoice();
   render();
   showStatus('queue-message', 'Completed tasks cleared. Undo is available until another change or refresh.');
@@ -1451,6 +1989,9 @@ function tickFocus() {
 
   if (focusSeconds <= 0) {
     const completedTask = getFocusTask();
+    if (completedTask) {
+      recordHistory('focus-finished', completedTask.text);
+    }
     clearInterval(focusTimer);
     focusTimer = null;
     focusTaskId = null;
@@ -1485,6 +2026,7 @@ function startFocus() {
 
   focusTaskId = task.id;
   focusTimer = setInterval(tickFocus, 1000);
+  recordHistory('focus-started', task.text);
   renderTimer();
   setFocusStatus('Focus started for ' + task.text + '.');
 }
@@ -1559,6 +2101,7 @@ function toggleTheme() {
 }
 
 el('task-form').addEventListener('submit', handleTaskSubmit);
+el('routine-form').addEventListener('submit', handleRoutineSubmit);
 el('current-energy-input').addEventListener('change', setCurrentEnergy);
 el('time-available-input').addEventListener('change', setTimeAvailable);
 el('save-personal-settings').addEventListener('click', saveSettingsFromForm);
@@ -1567,7 +2110,10 @@ el('download-backup').addEventListener('click', downloadBackup);
 el('restore-backup').addEventListener('click', openRestorePicker);
 el('restore-backup-input').addEventListener('change', previewRestoreBackup);
 el('confirm-restore').addEventListener('click', restoreBackup);
+el('recover-selected').addEventListener('click', recoverSelectedBackupItems);
 el('cancel-restore').addEventListener('click', () => clearRestorePreview({ returnFocus: true }));
+el('restore-select-all').addEventListener('change', setAllRestoreTasksSelected);
+el('restore-task-options').addEventListener('change', syncRestoreSelectAll);
 el('start-focus').addEventListener('click', startFocus);
 el('pause-focus').addEventListener('click', pauseFocus);
 el('reset-focus').addEventListener('click', () => stopFocus('Timer reset.'));
@@ -1578,6 +2124,12 @@ el('snooze-later').addEventListener('click', () => snoozeSuggestedTask('later'))
 el('snooze-tomorrow').addEventListener('click', () => snoozeSuggestedTask('tomorrow'));
 el('snooze-next-week').addEventListener('click', () => snoozeSuggestedTask('next-week'));
 el('complete-next').addEventListener('click', markSuggestedTaskDone);
+el('add-suggested-to-today').addEventListener('click', () => {
+  const task = getSuggestedTask();
+  if (task) {
+    addTaskToToday(task.id);
+  }
+});
 el('undo-delete-task').addEventListener('click', undoLastAction);
 el('clear-completed').addEventListener('click', clearCompletedTasks);
 el('queue-search').addEventListener('input', updateQueueControls);

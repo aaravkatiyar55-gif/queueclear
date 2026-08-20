@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 2,
+  "exportedAt": "2026-08-20T00:00:00.000Z",
+  "tasks": [
+    {
+      "id": "recovery-task-one",
+      "text": "QC Recovery Import One",
+      "energy": "low",
+      "done": false,
+      "createdAt": 1,
+      "estimatedMinutes": 5,
+      "firstStep": "Open the book",
+      "waitingOn": null,
+      "handoff": null,
+      "handoffAt": null,
+      "snoozedUntil": null,
+      "completedAt": null,
+      "dueDate": null
+    },
+    {
+      "id": "recovery-task-two",
+      "text": "QC Recovery Import Two",
+      "energy": "medium",
+      "done": false,
+      "createdAt": 2,
+      "estimatedMinutes": 15,
+      "firstStep": "Write the first line",
+      "waitingOn": null,
+      "handoff": null,
+      "handoffAt": null,
+      "snoozedUntil": null,
+      "completedAt": null,
+      "dueDate": null
+    }
+  ],
+  "theme": "calm",
+  "currentEnergy": "low",
+  "timeAvailable": 15,
+  "personalSettings": {
+    "workspaceName": "Recovery test space",
+    "personalNote": "Use a backup carefully.",
+    "focusMinutes": 10
+  },
+  "todayPlan": { "date": "2026-08-20", "taskIds": ["recovery-task-one"] },
+  "routines": [],
+  "historyItems": []
+}

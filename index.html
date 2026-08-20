@@ -8,7 +8,7 @@
       content="QueueClear helps students choose one small task to start."
     />
     <title>QueueClear — one task to start</title>
-    <link rel="stylesheet" href="style.css?v=12" />
+    <link rel="stylesheet" href="style.css?v=13" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to tasks</a>
@@ -88,6 +88,35 @@
               <div class="field">
                 <label for="due-date-input">Due date <span class="optional-label">(optional)</span></label>
                 <input id="due-date-input" type="date" />
+              </div>
+
+              <div class="field">
+                <label for="subject-input">Subject or area</label>
+                <select id="subject-input">
+                  <option value="general" selected>General</option>
+                  <option value="maths">Maths</option>
+                  <option value="science">Science</option>
+                  <option value="english">English</option>
+                  <option value="social-science">Social science</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="priority-input">How soon does it matter?</label>
+                <select id="priority-input">
+                  <option value="normal" selected>Normal</option>
+                  <option value="important">Important</option>
+                  <option value="soon">Needs attention soon</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="recurrence-input">Repeat</label>
+                <select id="recurrence-input">
+                  <option value="none" selected>Does not repeat</option>
+                  <option value="weekly">Repeat weekly after completion</option>
+                </select>
               </div>
             </div>
           </details>
@@ -198,6 +227,7 @@
         </section>
 
         <div class="next-actions">
+          <button id="add-suggested-to-today" class="text-button" type="button" disabled>Add to today</button>
           <button id="pick-another" class="text-button" type="button" disabled>Pick another</button>
           <details id="snooze-options" class="snooze-options">
             <summary>Snooze this task</summary>
@@ -214,6 +244,18 @@
           <p id="undo-message" role="status" aria-live="polite"></p>
           <button id="undo-delete-task" class="text-button" type="button">Undo last action</button>
         </div>
+      </section>
+
+      <section class="today-panel" aria-labelledby="today-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="today-title">Today’s plan</h2>
+            <p class="section-help">Choose a few realistic tasks. The rest stays safely in your queue.</p>
+          </div>
+          <p id="today-count" class="today-count" aria-live="polite"></p>
+        </div>
+        <div id="today-plan" class="today-plan"></div>
+        <p id="today-empty" class="empty-state">Nothing planned yet. Add a ready task from your queue.</p>
       </section>
 
       <section class="queue-panel" aria-labelledby="queue-title">
@@ -236,6 +278,7 @@
               <option value="low">Low energy</option>
               <option value="medium">Medium energy</option>
               <option value="high">High energy</option>
+              <option value="important">Important or soon</option>
             </select>
           </div>
           <div class="field">
@@ -245,6 +288,7 @@
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
               <option value="shortest">Shortest first</option>
+              <option value="due-soon">Due soon</option>
             </select>
           </div>
           <button id="clear-completed" class="text-button" type="button">Clear completed</button>
@@ -306,17 +350,53 @@
           <h3 id="restore-title">Backup ready to restore</h3>
           <p id="restore-summary"></p>
           <p id="restore-preferences" class="restore-preferences"></p>
-          <p class="restore-warning">Restoring replaces current QueueClear data in this browser.</p>
+          <p id="restore-warning" class="restore-warning"></p>
+          <fieldset class="restore-selection">
+            <legend>Choose tasks to recover</legend>
+            <label class="restore-check"><input id="restore-select-all" type="checkbox" checked /> Select all recoverable tasks</label>
+            <div id="restore-task-options" class="restore-task-options"></div>
+          </fieldset>
+          <fieldset class="restore-selection">
+            <legend>Optional saved preferences</legend>
+            <div id="restore-preference-options" class="restore-task-options"></div>
+          </fieldset>
           <div class="restore-actions">
             <button id="confirm-restore" class="primary-button" type="button">Replace current data</button>
+            <button id="recover-selected" class="text-button" type="button">Add selected items safely</button>
             <button id="cancel-restore" class="text-button" type="button">Cancel</button>
           </div>
         </section>
         <p id="data-message" class="data-message" role="status" aria-live="polite"></p>
       </section>
+
+      <section class="routines-panel" aria-labelledby="routines-title">
+        <h2 id="routines-title">Study routines</h2>
+        <p class="section-help">Save a small editable sequence, then add its steps to your queue when you need it.</p>
+        <form id="routine-form" class="routine-form" novalidate>
+          <div class="field">
+            <label for="routine-name-input">Routine name</label>
+            <input id="routine-name-input" maxlength="60" autocomplete="off" placeholder="e.g. Maths revision" />
+          </div>
+          <div class="field">
+            <label for="routine-step-input">First step</label>
+            <input id="routine-step-input" maxlength="140" autocomplete="off" placeholder="e.g. Review yesterday’s mistakes" />
+          </div>
+          <button class="primary-button" type="submit">Save routine</button>
+        </form>
+        <p id="routine-message" class="queue-message" role="status" aria-live="polite"></p>
+        <div id="routine-list" class="routine-list"></div>
+        <p id="routine-empty" class="empty-state">No routines yet. Save one sequence you use more than once.</p>
+      </section>
+
+      <section class="history-panel" aria-labelledby="history-title">
+        <h2 id="history-title">Private history</h2>
+        <p class="section-help">Completed tasks, finished focus sessions, and saved handoffs appear here on this browser. It starts from now—there is no productivity score.</p>
+        <ul id="history-list" class="history-list"></ul>
+        <p id="history-empty" class="empty-state">No history yet. It will build as you use QueueClear.</p>
+      </section>
     </main>
 
     <footer><p>Saved only in this browser.</p></footer>
-    <script src="script.js?v=18"></script>
+    <script type="module" src="script.js?v=19"></script>
   </body>
 </html>
