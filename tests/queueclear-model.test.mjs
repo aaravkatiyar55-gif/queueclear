@@ -31,6 +31,7 @@ test('normalizes legacy tasks without optional fields', () => {
     estimatedMinutes: null,
     firstStep: null,
     waitingOn: null,
+    waitingUntil: null,
     handoff: null,
     handoffAt: null,
     snoozedUntil: null,
@@ -41,6 +42,17 @@ test('normalizes legacy tasks without optional fields', () => {
     recurrence: 'none',
     checklist: [],
   });
+});
+
+test('keeps a valid waiting revisit date while rejecting malformed dates', () => {
+  assert.equal(
+    normalizeTask({ text: 'Ask teacher', waitingOn: 'Clarification', waitingUntil: '2026-08-23' }).waitingUntil,
+    '2026-08-23',
+  );
+  assert.equal(
+    normalizeTask({ text: 'Ask teacher', waitingOn: 'Clarification', waitingUntil: 'next Tuesday' }).waitingUntil,
+    null,
+  );
 });
 
 test('keeps valid checklist items and weekly recurrence while rejecting blank checklist text', () => {

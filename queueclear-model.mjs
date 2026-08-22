@@ -47,6 +47,7 @@ export function normalizeTask(candidate, { now = Date.now(), createId = () => cr
     estimatedMinutes: estimateOptions.includes(estimatedMinutes) ? estimatedMinutes : null,
     firstStep: normalizeWhitespace(candidate.firstStep).slice(0, maxFirstStepLength) || null,
     waitingOn: normalizeWhitespace(candidate.waitingOn).slice(0, maxWaitingOnLength) || null,
+    waitingUntil: normalizeDueDate(candidate.waitingUntil),
     handoff: normalizeWhitespace(candidate.handoff).slice(0, maxHandoffLength) || null,
     handoffAt: normalizeTimestamp(candidate.handoffAt),
     snoozedUntil: normalizeTimestamp(candidate.snoozedUntil),

@@ -8,7 +8,8 @@
       content="QueueClear helps students choose one small task to start."
     />
     <title>QueueClear — one task to start</title>
-    <link rel="stylesheet" href="style.css?v=13" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css?v=14" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to tasks</a>
@@ -30,7 +31,22 @@
         <p id="personal-note" class="personal-note" hidden></p>
       </section>
 
+      <section class="workflow-map" aria-labelledby="workflow-map-title">
+        <div>
+          <span class="notebook-tab">§ 00 // Study Desk Flow</span>
+          <p class="eyebrow">Three friction fixes</p>
+          <h2 id="workflow-map-title">A task list is not the point.</h2>
+          <p class="section-help">QueueClear supports three separate moments where study work usually gets stuck.</p>
+        </div>
+        <ol class="workflow-list">
+          <li><a href="#today-title"><strong>Plan a small session</strong><span>Turn the time you have into a short plan without replacing your choices.</span></a></li>
+          <li><a href="#waiting-title"><strong>Park a blocker safely</strong><span>Give blocked work a reason and a revisit date so it stops competing for attention.</span></a></li>
+          <li><a href="#resume-title"><strong>Resume without re-deciding</strong><span>Keep a tiny handoff after a focus break and come back to it when you are ready.</span></a></li>
+        </ol>
+      </section>
+
       <section class="capture-panel" aria-labelledby="capture-title">
+        <span class="notebook-tab">§ 01 // Quick Capture</span>
         <h2 id="capture-title">Add something to your list</h2>
         <p class="section-help">Keep it short. You can add a first step if the task feels too big.</p>
 
@@ -126,6 +142,7 @@
       </section>
 
       <section class="next-card" aria-labelledby="next-title">
+        <span class="notebook-tab next-card-tab">§ 02 // Start Here</span>
         <h2 id="next-title">Start here</h2>
         <div class="current-energy">
           <label for="current-energy-input">How much energy do you have right now?</label>
@@ -180,6 +197,16 @@
             <button id="park-waiting" class="text-button" type="button" disabled>
               Move to waiting
             </button>
+          </div>
+          <label for="waiting-review-input">When should you check this again?</label>
+          <select id="waiting-review-input" class="waiting-review-input" disabled>
+            <option value="">No reminder</option>
+            <option value="tomorrow">Tomorrow</option>
+            <option value="next-week">Next week</option>
+          </select>
+          <div id="waiting-follow-ups" class="waiting-follow-ups" hidden>
+            <p id="waiting-follow-up-label"></p>
+            <div id="waiting-follow-up-actions" class="waiting-follow-up-actions"></div>
           </div>
           <p id="waiting-message" class="waiting-message" role="status" aria-live="polite"></p>
         </section>
@@ -247,6 +274,7 @@
       </section>
 
       <section class="today-panel" aria-labelledby="today-title">
+        <span class="notebook-tab">§ 03 // Today’s Plan</span>
         <div class="section-heading">
           <div>
             <h2 id="today-title">Today’s plan</h2>
@@ -254,11 +282,34 @@
           </div>
           <p id="today-count" class="today-count" aria-live="polite"></p>
         </div>
+        <div class="plan-builder" aria-label="Build a realistic plan">
+          <p id="plan-builder-help">Choose a time above, then add a few ready tasks that fit. Existing plan items stay exactly where they are.</p>
+          <button id="build-today-plan" class="text-button" type="button">Build a plan from my ready tasks</button>
+        </div>
+        <p id="plan-builder-message" class="queue-message" role="status" aria-live="polite"></p>
+        <aside id="plan-reality" class="plan-reality" aria-live="polite" hidden>
+          <p class="plan-reality-label">Plan reality check</p>
+          <p id="plan-reality-message"></p>
+        </aside>
         <div id="today-plan" class="today-plan"></div>
         <p id="today-empty" class="empty-state">Nothing planned yet. Add a ready task from your queue.</p>
       </section>
 
+      <section id="resume-panel" class="resume-panel" aria-labelledby="resume-title">
+        <span class="notebook-tab">§ 04 // Resume Work</span>
+        <div class="section-heading">
+          <div>
+            <h2 id="resume-title">Resume after a break</h2>
+            <p class="section-help">Saved handoffs stay here until you finish the task, move it to Waiting, or replace the next step.</p>
+          </div>
+          <p id="resume-count" class="today-count" aria-live="polite"></p>
+        </div>
+        <div id="resume-list" class="resume-list"></div>
+        <p id="resume-empty" class="empty-state">No saved handoffs yet. Pause a focus session to leave yourself one.</p>
+      </section>
+
       <section class="queue-panel" aria-labelledby="queue-title">
+        <span class="notebook-tab">§ 05 // Study Queue</span>
         <h2 id="queue-title">Other tasks</h2>
         <p class="section-help">They stay here until you are ready for them.</p>
         <div class="queue-tools" aria-label="Queue controls">
@@ -299,6 +350,7 @@
       </section>
 
       <section class="data-panel" aria-labelledby="data-title">
+        <span class="notebook-tab">§ 06 // Local Data</span>
         <h2 id="data-title">Your data</h2>
         <p>QueueClear saves tasks only in this browser. Download a copy if you want to keep one.</p>
         <details class="personal-settings">
@@ -370,6 +422,7 @@
       </section>
 
       <section class="routines-panel" aria-labelledby="routines-title">
+        <span class="notebook-tab">§ 07 // Routines</span>
         <h2 id="routines-title">Study routines</h2>
         <p class="section-help">Save a small editable sequence, then add its steps to your queue when you need it.</p>
         <form id="routine-form" class="routine-form" novalidate>
@@ -389,6 +442,7 @@
       </section>
 
       <section class="history-panel" aria-labelledby="history-title">
+        <span class="notebook-tab">§ 08 // Private History</span>
         <h2 id="history-title">Private history</h2>
         <p class="section-help">Completed tasks, finished focus sessions, and saved handoffs appear here on this browser. It starts from now—there is no productivity score.</p>
         <ul id="history-list" class="history-list"></ul>
@@ -397,6 +451,6 @@
     </main>
 
     <footer><p>Saved only in this browser.</p></footer>
-    <script type="module" src="script.js?v=22"></script>
+    <script type="module" src="script.js?v=23"></script>
   </body>
 </html>

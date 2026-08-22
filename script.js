@@ -2,6 +2,8 @@ import {
   energyLevels,
   estimateOptions,
   focusDurationOptions,
+  maxChecklistItemLength,
+  maxChecklistItems,
   maxFirstStepLength,
   maxHandoffLength,
   maxTitleLength,
@@ -14,26 +16,65 @@ import {
   priorityOptions,
   recurrenceOptions,
   subjectOptions,
-  maxChecklistItemLength,
-  maxChecklistItems,
 } from './queueclear-model.mjs';
+import {
+  appendHistory,
+  getLocalDatePart,
+  getThemePreference,
+  legacyStorageKey,
+  loadCurrentEnergy,
+  loadHistory,
+  loadPersonalSettings,
+  loadRoutines,
+  loadTasks,
+  loadTimeAvailable,
+  loadTodayPlan,
+  maxHistoryItems,
+  maxRoutineNameLength,
+  maxRoutineStepLength,
+  maxTodayTasks,
+  normalizeHistoryItem,
+  normalizeRoutine,
+  normalizeTodayPlan,
+  saveCurrentEnergy,
+  saveHistory,
+  savePersonalSettings,
+  saveRoutines,
+  saveTasks,
+  saveThemePreference,
+  saveTimeAvailable,
+  saveTodayPlan,
+  storageKey,
+  themeKey,
+  timeAvailableKey,
+  timeAvailableOptions,
+} from './queueclear-storage.mjs';
 import { validateBackup } from './queueclear-recovery.mjs';
 import { restoreTaskIdToTodayPlan } from './queueclear-today-plan.mjs';
+import {
+  buildDailyPlan,
+  compareByEstimateThenQueueOrder,
+  formatAvailableTime,
+  formatEnergy,
+  formatEstimate,
+  formatPriority,
+  formatSubject,
+  getPlanRealityCheck,
+  getResumableTasks,
+  getSuggestion,
+  getSuggestionReason,
+  getWaitingFollowUps,
+  isReadyTask,
+} from './queueclear-major-workflows.mjs';
+import {
+  formatDueDate,
+  formatFocusTime,
+  formatSnoozeTime,
+  getSnoozeTime,
+  getWaitingReviewDate,
+  isDueToday,
+} from './queueclear-timer-history.mjs';
 
-const storageKey = 'queueclear.tasks.v2';
-const legacyStorageKey = 'queueclear.tasks.v1';
-const themeKey = 'queueclear.theme.v1';
-const currentEnergyKey = 'queueclear.current-energy.v1';
-const timeAvailableKey = 'queueclear.time-available.v1';
-const settingsKey = 'queueclear.settings.v1';
-const todayPlanKey = 'queueclear.today-plan.v1';
-const routinesKey = 'queueclear.routines.v1';
-const historyKey = 'queueclear.history.v1';
-const timeAvailableOptions = [5, 15, 25, 45];
-const maxRoutineNameLength = 60;
-const maxRoutineStepLength = 140;
-const maxTodayTasks = 5;
-const maxHistoryItems = 100;
 const defaultDocumentTitle = 'QueueClear — one task to start';
 const queueFilterOptions = [
   'all',
@@ -49,13 +90,13 @@ const queueFilterOptions = [
 ];
 const queueSortOptions = ['suggested', 'newest', 'oldest', 'shortest', 'due-soon'];
 
-let tasks = readTasks();
-let currentEnergy = readCurrentEnergy();
-let timeAvailable = readTimeAvailable();
-let personalSettings = readPersonalSettings();
-let todayPlan = readTodayPlan();
-let routines = readRoutines();
-let historyItems = readHistory();
+let tasks = loadTasks();
+let currentEnergy = loadCurrentEnergy();
+let timeAvailable = loadTimeAvailable();
+let personalSettings = loadPersonalSettings();
+let todayPlan = loadTodayPlan();
+let routines = loadRoutines();
+let historyItems = loadHistory();
 let focusTimer = null;
 let focusSeconds = getDefaultFocusSeconds();
 let focusTaskId = null;
@@ -71,142 +112,21 @@ const statusTimers = {};
 
 const el = (id) => document.getElementById(id);
 
-function readTasks() {
-  try {
-    const saved = JSON.parse(
-      localStorage.getItem(storageKey) || localStorage.getItem(legacyStorageKey) || '[]',
-    );
-    return Array.isArray(saved) ? saved.map(normalizeTask).filter(Boolean) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveTasks() {
-  localStorage.setItem(storageKey, JSON.stringify(tasks));
-  localStorage.removeItem(legacyStorageKey);
-}
-
-function readCurrentEnergy() {
-  const saved = localStorage.getItem(currentEnergyKey);
-  return energyLevels.includes(saved) ? saved : 'medium';
-}
-
-function saveCurrentEnergy() {
-  localStorage.setItem(currentEnergyKey, currentEnergy);
-}
-
-function readTimeAvailable() {
-  const saved = Number(localStorage.getItem(timeAvailableKey));
-  return timeAvailableOptions.includes(saved) ? saved : null;
-}
-
-function saveTimeAvailable() {
-  localStorage.setItem(timeAvailableKey, timeAvailable === null ? '' : String(timeAvailable));
-}
-
-function readPersonalSettings() {
-  try {
-    return normalizePersonalSettings(JSON.parse(localStorage.getItem(settingsKey) || '{}'));
-  } catch {
-    return normalizePersonalSettings({});
-  }
-}
-
-function savePersonalSettings() {
-  localStorage.setItem(settingsKey, JSON.stringify(personalSettings));
-}
-
-function normalizeTodayPlan(candidate) {
-  const taskIds = Array.isArray(candidate?.taskIds)
-    ? candidate.taskIds.filter((taskId) => typeof taskId === 'string')
-    : [];
-  return {
-    date: normalizeDueDate(candidate?.date) || getLocalDatePart(),
-    taskIds: [...new Set(taskIds)].slice(0, maxTodayTasks),
-  };
-}
-
-function readTodayPlan() {
-  try {
-    const plan = normalizeTodayPlan(JSON.parse(localStorage.getItem(todayPlanKey) || '{}'));
-    return plan.date === getLocalDatePart() ? plan : { date: getLocalDatePart(), taskIds: [] };
-  } catch {
-    return { date: getLocalDatePart(), taskIds: [] };
-  }
-}
-
-function saveTodayPlan() {
-  todayPlan.date = getLocalDatePart();
-  todayPlan.taskIds = todayPlan.taskIds.filter((taskId) => tasks.some((task) => task.id === taskId && !task.done));
-  localStorage.setItem(todayPlanKey, JSON.stringify(todayPlan));
-}
-
-function normalizeRoutine(candidate) {
-  const name = normalizeWhitespace(candidate?.name).slice(0, maxRoutineNameLength);
-  const steps = Array.isArray(candidate?.steps)
-    ? candidate.steps
-        .map((step) => normalizeWhitespace(step).slice(0, maxRoutineStepLength))
-        .filter(Boolean)
-        .slice(0, 12)
-    : [];
-  if (!name || steps.length === 0) {
-    return null;
-  }
-  return {
-    id: typeof candidate?.id === 'string' ? candidate.id : crypto.randomUUID(),
-    name,
-    steps,
-    createdAt: normalizeTimestamp(candidate?.createdAt) ?? Date.now(),
-  };
-}
-
-function readRoutines() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(routinesKey) || '[]');
-    return Array.isArray(saved) ? saved.map(normalizeRoutine).filter(Boolean) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveRoutines() {
-  localStorage.setItem(routinesKey, JSON.stringify(routines));
-}
-
-function normalizeHistoryItem(candidate) {
-  const type = ['completed', 'focus-started', 'focus-finished', 'handoff'].includes(candidate?.type)
-    ? candidate.type
-    : null;
-  const text = normalizeWhitespace(candidate?.text).slice(0, maxFirstStepLength);
-  const createdAt = normalizeTimestamp(candidate?.createdAt);
-  return type && text && createdAt ? { type, text, createdAt } : null;
-}
-
-function readHistory() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(historyKey) || '[]');
-    return Array.isArray(saved) ? saved.map(normalizeHistoryItem).filter(Boolean).slice(0, maxHistoryItems) : [];
-  } catch {
-    return [];
-  }
-}
-
-function recordHistory(type, text) {
-  const item = normalizeHistoryItem({ type, text, createdAt: Date.now() });
-  if (!item) {
-    return;
-  }
-  historyItems.unshift(item);
-  historyItems = historyItems.slice(0, maxHistoryItems);
-  localStorage.setItem(historyKey, JSON.stringify(historyItems));
-}
-
 function getDefaultFocusSeconds() {
   return personalSettings.focusMinutes * 60;
 }
 
-function createTask({ text, energy, estimatedMinutes, firstStep, dueDate, subject = 'general', priority = 'normal', recurrence = 'none', checklist = [] }) {
+function createTask({
+  text,
+  energy,
+  estimatedMinutes,
+  firstStep,
+  dueDate,
+  subject = 'general',
+  priority = 'normal',
+  recurrence = 'none',
+  checklist = [],
+}) {
   return normalizeTask({
     id: crypto.randomUUID(),
     text,
@@ -216,6 +136,7 @@ function createTask({ text, energy, estimatedMinutes, firstStep, dueDate, subjec
     estimatedMinutes,
     firstStep,
     waitingOn: null,
+    waitingUntil: null,
     handoff: null,
     handoffAt: null,
     snoozedUntil: null,
@@ -236,171 +157,32 @@ function isSnoozed(task, now = Date.now()) {
   return task.snoozedUntil !== null && task.snoozedUntil > now;
 }
 
-function getAvailableTasks() {
-  return getActiveTasks().filter((task) => !isSnoozed(task) && !isWaiting(task));
-}
-
 function isWaiting(task) {
   return Boolean(task.waitingOn);
+}
+
+function getAvailableTasks() {
+  return getActiveTasks().filter((task) => !isSnoozed(task) && !isWaiting(task));
 }
 
 function getWaitingTasks() {
   return getActiveTasks().filter(isWaiting);
 }
 
-function compareByEstimateThenQueueOrder(first, second) {
-  const firstEstimate = first.estimatedMinutes;
-  const secondEstimate = second.estimatedMinutes;
-
-  if (firstEstimate !== null && secondEstimate !== null && firstEstimate !== secondEstimate) {
-    return firstEstimate - secondEstimate;
-  }
-
-  if (firstEstimate !== null && secondEstimate === null) {
-    return -1;
-  }
-
-  if (firstEstimate === null && secondEstimate !== null) {
-    return 1;
-  }
-
-  return first.createdAt - second.createdAt;
+function getRecommendation() {
+  return getSuggestion(tasks, {
+    currentEnergy,
+    timeAvailable,
+    suggestionOffset,
+  });
 }
 
-function getTasksThatFitTime(tasksToCheck) {
-  if (timeAvailable === null) {
-    return [];
-  }
-
-  return tasksToCheck.filter(
-    (task) => task.estimatedMinutes !== null && task.estimatedMinutes <= timeAvailable,
-  );
-}
-
-function getSuggestion() {
-  const available = getAvailableTasks();
-  const matchesEnergy = available.filter((task) => task.energy === currentEnergy);
-  const energyCandidates = matchesEnergy.length > 0 ? matchesEnergy : available;
-  const timeMatches = getTasksThatFitTime(energyCandidates);
-  const candidates = timeMatches.length > 0 ? timeMatches : energyCandidates;
-
-  const orderedCandidates = candidates.slice().sort(compareByEstimateThenQueueOrder);
-  const selectedIndex = orderedCandidates.length === 0 ? 0 : suggestionOffset % orderedCandidates.length;
-
-  return {
-    task: orderedCandidates[selectedIndex] || null,
-    available,
-    candidates: orderedCandidates,
-    energyFilteredChoices: matchesEnergy.length > 0 && matchesEnergy.length < available.length,
-    usedEnergyFallback: matchesEnergy.length === 0 && available.length > 0,
-    usedTimeFit: timeMatches.length > 0,
-    usedTimeFallback: timeAvailable !== null && timeMatches.length === 0 && available.length > 0,
-  };
+function getSuggestedTask() {
+  return getRecommendation().task;
 }
 
 function resetSuggestionChoice() {
   suggestionOffset = 0;
-}
-
-function getSuggestedTask() {
-  return getSuggestion().task;
-}
-
-function getTieBreakReason(task, candidates) {
-  if (candidates.length === 1) {
-    return 'It is the only task ready right now.';
-  }
-
-  if (task.estimatedMinutes !== null) {
-    const sameEstimate = candidates.filter(
-      (candidate) => candidate.estimatedMinutes === task.estimatedMinutes,
-    );
-    const hasLongerEstimate = candidates.some(
-      (candidate) =>
-        candidate.estimatedMinutes === null || candidate.estimatedMinutes > task.estimatedMinutes,
-    );
-
-    if (hasLongerEstimate && sameEstimate.length === 1) {
-      return 'It has the shortest available estimate.';
-    }
-
-    if (hasLongerEstimate) {
-      return 'It is tied for the shortest estimate and was added first.';
-    }
-  }
-
-  return 'The remaining choices are tied, so QueueClear kept the task added first.';
-}
-
-function getSuggestionReason(suggestion) {
-  const {
-    task,
-    candidates,
-    energyFilteredChoices,
-    usedEnergyFallback,
-    usedTimeFit,
-    usedTimeFallback,
-  } = suggestion;
-  const reasons = [];
-
-  if (energyFilteredChoices) {
-    reasons.push('It matches your ' + currentEnergy + '-energy setting.');
-  }
-
-  if (usedEnergyFallback) {
-    reasons.push('No task matches your ' + currentEnergy + '-energy setting.');
-  }
-
-  if (usedTimeFit) {
-    reasons.push('It fits the ' + formatAvailableTime(timeAvailable) + ' you have.');
-  }
-
-  if (usedTimeFallback) {
-    reasons.push(
-      'No estimated task fits the ' + formatAvailableTime(timeAvailable) + ' you have, so this is the closest ready option.',
-    );
-  }
-
-  if (suggestionOffset > 0 && candidates.length > 1) {
-    reasons.push('You chose another task from the same ready choices.');
-    return reasons.join(' ');
-  }
-
-  if (candidates.length > 1 || reasons.length === 0 || usedEnergyFallback || usedTimeFallback) {
-    reasons.push(getTieBreakReason(task, candidates));
-  }
-
-  return reasons.join(' ');
-}
-
-function formatEnergy(energy) {
-  return energy.charAt(0).toUpperCase() + energy.slice(1) + ' energy';
-}
-
-function formatSubject(subject) {
-  return subject === 'social-science'
-    ? 'Social science'
-    : subject.charAt(0).toUpperCase() + subject.slice(1);
-}
-
-function formatPriority(priority) {
-  return priority === 'soon' ? 'Needs attention soon' : priority.charAt(0).toUpperCase() + priority.slice(1);
-}
-
-function formatEstimate(minutes, longForm = false) {
-  if (!minutes) {
-    return '';
-  }
-
-  return longForm ? 'About ' + minutes + ' minutes' : minutes + ' min';
-}
-
-function formatAvailableTime(minutes) {
-  return minutes + ' minutes';
-}
-
-function getThemePreference() {
-  return localStorage.getItem(themeKey) === 'calm' ? 'calm' : 'paper';
 }
 
 function getBackupFileName(date = new Date()) {
@@ -613,18 +395,15 @@ function restoreBackup() {
   todayPlan = pendingRestore.todayPlan.value;
   routines = pendingRestore.routines.value;
   historyItems = pendingRestore.historyItems.value;
-  localStorage.setItem(storageKey, JSON.stringify(tasks));
-  localStorage.removeItem(legacyStorageKey);
-  localStorage.setItem(themeKey, pendingRestore.theme.value);
-  localStorage.setItem(currentEnergyKey, currentEnergy);
-  localStorage.setItem(
-    timeAvailableKey,
-    timeAvailable === null ? '' : String(timeAvailable),
-  );
-  savePersonalSettings();
-  saveTodayPlan();
-  saveRoutines();
-  localStorage.setItem(historyKey, JSON.stringify(historyItems));
+
+  saveTasks(tasks);
+  saveThemePreference(pendingRestore.theme.value);
+  saveCurrentEnergy(currentEnergy);
+  saveTimeAvailable(timeAvailable);
+  savePersonalSettings(personalSettings);
+  saveTodayPlan(todayPlan, tasks);
+  saveRoutines(routines);
+  saveHistory(historyItems);
 
   clearInterval(focusTimer);
   focusTimer = null;
@@ -667,7 +446,7 @@ function recoverSelectedBackupItems() {
   });
 
   tasks.push(...recoveredTasks);
-  if (selectedPreferences.has('theme')) localStorage.setItem(themeKey, pendingRestore.theme.value);
+  if (selectedPreferences.has('theme')) saveThemePreference(pendingRestore.theme.value);
   if (selectedPreferences.has('currentEnergy')) currentEnergy = pendingRestore.currentEnergy.value;
   if (selectedPreferences.has('timeAvailable')) timeAvailable = pendingRestore.timeAvailable.value;
   if (selectedPreferences.has('personalSettings')) personalSettings = pendingRestore.personalSettings.value;
@@ -679,19 +458,21 @@ function recoverSelectedBackupItems() {
     focusSeconds = getDefaultFocusSeconds();
   }
 
-  saveTasks();
-  saveCurrentEnergy();
-  saveTimeAvailable();
-  savePersonalSettings();
-  saveTodayPlan();
-  saveRoutines();
-  localStorage.setItem(historyKey, JSON.stringify(historyItems));
+  saveTasks(tasks);
+  saveCurrentEnergy(currentEnergy);
+  saveTimeAvailable(timeAvailable);
+  savePersonalSettings(personalSettings);
+  saveTodayPlan(todayPlan, tasks);
+  saveRoutines(routines);
+  saveHistory(historyItems);
   clearRestorePreview();
   applyTheme();
   resetSuggestionChoice();
   render();
   const recoveredLabel = recoveredTasks.length + ' task' + (recoveredTasks.length === 1 ? '' : 's');
-  const skippedLabel = skipped ? ' ' + skipped + ' active duplicate' + (skipped === 1 ? ' was' : 's were') + ' skipped.' : '';
+  const skippedLabel = skipped
+    ? ' ' + skipped + ' active duplicate' + (skipped === 1 ? ' was' : 's were') + ' skipped.'
+    : '';
   showStatus('data-message', 'Recovered ' + recoveredLabel + ' without replacing your current queue.' + skippedLabel);
   el('restore-backup').focus();
 }
@@ -708,20 +489,6 @@ function getTaskContext(task, { longEstimate = false, includeFirstStep = true } 
   }
 
   return details;
-}
-
-function formatFocusTime(seconds) {
-  const minutes = Math.floor(seconds / 60);
-  return minutes + ':' + String(seconds % 60).padStart(2, '0');
-}
-
-function formatSnoozeTime(timestamp) {
-  return new Intl.DateTimeFormat(undefined, {
-    day: 'numeric',
-    month: 'short',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(timestamp));
 }
 
 function showStatus(id, message) {
@@ -750,7 +517,7 @@ function clearCaptureContext() {
 }
 
 function renderSuggestion() {
-  const recommendation = getSuggestion();
+  const recommendation = getRecommendation();
   const suggestion = recommendation.task;
   const hasActiveTasks = getActiveTasks().length > 0;
 
@@ -793,12 +560,17 @@ function renderSuggestion() {
   el('next-handoff').textContent = suggestion.handoff
     ? 'Last handoff: ' + suggestion.handoff
     : '';
-  el('why-task').textContent = getSuggestionReason(recommendation);
+  el('why-task').textContent = getSuggestionReason(recommendation, {
+    currentEnergy,
+    timeAvailable,
+    suggestionOffset,
+  });
   el('next-details').hidden = false;
   el('pick-another').disabled = recommendation.candidates.length < 2;
   el('snooze-options').hidden = false;
   el('complete-next').disabled = false;
-  el('add-suggested-to-today').disabled = todayPlan.taskIds.includes(suggestion.id) || todayPlan.taskIds.length >= maxTodayTasks;
+  el('add-suggested-to-today').disabled =
+    todayPlan.taskIds.includes(suggestion.id) || todayPlan.taskIds.length >= maxTodayTasks;
 }
 
 function createTaskButton(label, className, ariaLabel) {
@@ -808,38 +580,6 @@ function createTaskButton(label, className, ariaLabel) {
   button.textContent = label;
   button.setAttribute('aria-label', ariaLabel);
   return button;
-}
-
-function getLocalDatePart(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return year + '-' + month + '-' + day;
-}
-
-function isDueToday(task) {
-  return task.dueDate === getLocalDatePart();
-}
-
-function formatDueDate(dueDate) {
-  if (!dueDate) {
-    return '';
-  }
-
-  const today = getLocalDatePart();
-  const tomorrowDate = new Date();
-  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-  const tomorrow = getLocalDatePart(tomorrowDate);
-  if (dueDate < today) {
-    return 'Overdue: ' + dueDate;
-  }
-  if (dueDate === today) {
-    return 'Due today';
-  }
-  if (dueDate === tomorrow) {
-    return 'Due tomorrow';
-  }
-  return 'Due ' + dueDate;
 }
 
 function matchesQueueFilter(task) {
@@ -874,7 +614,7 @@ function compareByDueDate(first, second) {
 }
 
 function getSuggestedQueueOrder() {
-  const suggested = getSuggestion().candidates;
+  const suggested = getRecommendation().candidates;
   const suggestedIds = new Set(suggested.map((task) => task.id));
   return suggested.concat(tasks.filter((task) => !suggestedIds.has(task.id)));
 }
@@ -931,7 +671,7 @@ function toggleChecklistItem(taskId, itemId) {
   const item = task?.checklist.find((candidate) => candidate.id === itemId);
   if (!item) return;
   item.done = !item.done;
-  saveTasks();
+  saveTasks(tasks);
   renderTaskList();
 }
 
@@ -949,7 +689,7 @@ function addChecklistItem(event, taskId) {
     return;
   }
   task.checklist.push({ id: crypto.randomUUID(), text, done: false });
-  saveTasks();
+  saveTasks(tasks);
   renderTaskList();
 }
 
@@ -1011,7 +751,7 @@ function createTaskEditForm(task) {
     'edit-recurrence-' + task.id,
     recurrenceOptions,
     task.recurrence,
-    (value) => value === 'weekly' ? 'Repeat weekly after completion' : 'Does not repeat',
+    (value) => (value === 'weekly' ? 'Repeat weekly after completion' : 'Does not repeat'),
   );
   const saveButton = document.createElement('button');
   const cancelButton = document.createElement('button');
@@ -1106,7 +846,13 @@ function saveTaskEdit(event, taskId) {
     titleInput.focus();
     return;
   }
-  if (getActiveTasks().some((candidate) => candidate.id !== taskId && candidate.text.toLocaleLowerCase() === text.toLocaleLowerCase())) {
+  if (
+    getActiveTasks().some(
+      (candidate) =>
+        candidate.id !== taskId &&
+        candidate.text.toLocaleLowerCase() === text.toLocaleLowerCase(),
+    )
+  ) {
     showStatus('queue-message', 'That task is already in your active queue.');
     titleInput.focus();
     return;
@@ -1117,7 +863,9 @@ function saveTaskEdit(event, taskId) {
   task.estimatedMinutes = estimateOptions.includes(Number(el('edit-estimate-' + taskId).value))
     ? Number(el('edit-estimate-' + taskId).value)
     : null;
-  task.firstStep = normalizeWhitespace(el('edit-first-step-' + taskId).value).slice(0, maxFirstStepLength) || null;
+  task.firstStep =
+    normalizeWhitespace(el('edit-first-step-' + taskId).value).slice(0, maxFirstStepLength) ||
+    null;
   task.dueDate = normalizeDueDate(el('edit-due-date-' + taskId).value);
   task.subject = subjectOptions.includes(el('edit-subject-' + taskId).value)
     ? el('edit-subject-' + taskId).value
@@ -1130,7 +878,7 @@ function saveTaskEdit(event, taskId) {
     : 'none';
   editingTaskId = null;
   resetSuggestionChoice();
-  saveTasks();
+  saveTasks(tasks);
   render();
   showStatus('queue-message', 'Task updated.');
   focusTaskCheckboxOrQueue(task.id);
@@ -1189,6 +937,12 @@ function renderTaskList() {
       waitingLabel.className = 'waiting-label';
       waitingLabel.textContent = 'Waiting on: ' + task.waitingOn;
       content.append(waitingLabel);
+      if (task.waitingUntil) {
+        const revisitLabel = document.createElement('span');
+        revisitLabel.className = 'waiting-label';
+        revisitLabel.textContent = 'Revisit: ' + formatDueDate(task.waitingUntil).replace(/^Due /, '');
+        content.append(revisitLabel);
+      }
     }
 
     if (!task.done) {
@@ -1247,9 +1001,10 @@ function renderTaskList() {
   });
 
   el('empty-state').hidden = visibleTasks.length > 0;
-  el('empty-state').textContent = tasks.length === 0
-    ? 'Your queue is clear. Add one small task above.'
-    : 'No tasks match these queue controls.';
+  el('empty-state').textContent =
+    tasks.length === 0
+      ? 'Your queue is clear. Add one small task above.'
+      : 'No tasks match these queue controls.';
   el('clear-completed').disabled = !tasks.some((task) => task.done);
 }
 
@@ -1292,7 +1047,7 @@ function addTaskToToday(taskId) {
     return;
   }
   todayPlan.taskIds.push(taskId);
-  saveTodayPlan();
+  saveTodayPlan(todayPlan, tasks);
   render();
   showNextStatus('Added to today’s plan. The rest of your queue stays in the background.');
 }
@@ -1307,27 +1062,35 @@ function moveTodayTask(taskId, direction) {
     todayPlan.taskIds[nextIndex],
     todayPlan.taskIds[index],
   ];
-  saveTodayPlan();
+  saveTodayPlan(todayPlan, tasks);
   render();
   showStatus('queue-message', 'Today’s plan reordered.');
 }
 
 function removeTodayTask(taskId) {
   todayPlan.taskIds = todayPlan.taskIds.filter((candidateId) => candidateId !== taskId);
-  saveTodayPlan();
+  saveTodayPlan(todayPlan, tasks);
   render();
   showStatus('queue-message', 'Removed from today’s plan. The task is still safe in your queue.');
 }
 
 function renderTodayPlan() {
-  saveTodayPlan();
+  saveTodayPlan(todayPlan, tasks);
   const plan = getTodayTasks();
   const container = el('today-plan');
   container.replaceChildren();
   const estimatedMinutes = plan.reduce((total, task) => total + (task.estimatedMinutes || 0), 0);
   const unestimated = plan.filter((task) => task.estimatedMinutes === null).length;
-  el('today-count').textContent = plan.length + ' of ' + maxTodayTasks + ' chosen · ' + estimatedMinutes + ' min' + (unestimated ? ' + ' + unestimated + ' unestimated' : '');
+  el('today-count').textContent =
+    plan.length +
+    ' of ' +
+    maxTodayTasks +
+    ' chosen · ' +
+    estimatedMinutes +
+    ' min' +
+    (unestimated ? ' + ' + unestimated + ' unestimated' : '');
   el('today-empty').hidden = plan.length > 0;
+  renderPlanRealityCheck();
 
   plan.forEach((task, index) => {
     const item = document.createElement('div');
@@ -1337,9 +1100,16 @@ function renderTodayPlan() {
     const actions = document.createElement('div');
     item.className = 'today-item';
     title.className = 'today-task-title';
-    title.textContent = (index + 1) + '. ' + task.text;
+    title.textContent = index + 1 + '. ' + task.text;
     meta.className = 'today-task-meta';
-    meta.textContent = [formatSubject(task.subject), formatPriority(task.priority), formatEnergy(task.energy), formatEstimate(task.estimatedMinutes)].filter(Boolean).join(' · ');
+    meta.textContent = [
+      formatSubject(task.subject),
+      formatPriority(task.priority),
+      formatEnergy(task.energy),
+      formatEstimate(task.estimatedMinutes),
+    ]
+      .filter(Boolean)
+      .join(' · ');
     content.append(title, meta);
     actions.className = 'today-actions';
     const up = createTaskButton('Move up', 'move-today-up', 'Move ' + task.text + ' earlier in today’s plan');
@@ -1352,6 +1122,137 @@ function renderTodayPlan() {
     remove.addEventListener('click', () => removeTodayTask(task.id));
     actions.append(up, down, remove);
     item.append(content, actions);
+    container.append(item);
+  });
+
+  const readyCount = getAvailableTasks().filter((task) => !todayPlan.taskIds.includes(task.id)).length;
+  const planButton = el('build-today-plan');
+  planButton.disabled = readyCount === 0 || todayPlan.taskIds.length >= maxTodayTasks;
+  planButton.textContent =
+    todayPlan.taskIds.length >= maxTodayTasks
+      ? 'Today’s plan is full'
+      : 'Build a plan from my ready tasks';
+  el('plan-builder-help').textContent =
+    timeAvailable === null
+      ? 'Choose a time above first. QueueClear will only add ready tasks and will not replace your existing choices.'
+      : 'Using your ' +
+        currentEnergy +
+        '-energy setting and ' +
+        formatAvailableTime(timeAvailable) +
+        '. Existing plan items stay exactly where they are.';
+}
+
+function renderPlanRealityCheck() {
+  const reality = getPlanRealityCheck(tasks, todayPlan.taskIds, timeAvailable);
+  const panel = el('plan-reality');
+  const message = el('plan-reality-message');
+
+  panel.hidden = reality.state === 'empty';
+  panel.dataset.state = reality.state;
+
+  if (reality.state === 'set-time') {
+    message.textContent = 'Pick how much time you have above to check whether this plan is realistic.';
+    return;
+  }
+
+  if (reality.state === 'unknown') {
+    message.textContent = reality.knownMinutes + ' estimated minutes so far, but ' + reality.unknownEstimateCount + ' task' + (reality.unknownEstimateCount === 1 ? ' has' : 's have') + ' no estimate. The total is still uncertain.';
+    return;
+  }
+
+  if (reality.state === 'over-budget') {
+    message.textContent = 'This plan has ' + reality.knownMinutes + ' estimated minutes, which is ' + (reality.knownMinutes - reality.timeAvailable) + ' minutes more than the time you chose. Remove or move something when you are ready.';
+    return;
+  }
+
+  message.textContent = 'This plan has ' + reality.knownMinutes + ' estimated minutes and fits within your ' + reality.timeAvailable + '-minute time choice.';
+}
+
+function buildTodayPlanFromReadyTasks() {
+  if (timeAvailable === null) {
+    showStatus('plan-builder-message', 'Choose how much time you have above before building a realistic plan.');
+    el('time-available-input').focus();
+    return;
+  }
+
+  const result = buildDailyPlan(tasks, {
+    selectedTaskIds: todayPlan.taskIds,
+    energy: currentEnergy,
+    timeAvailable,
+    maxTasks: maxTodayTasks,
+  });
+
+  if (result.taskIds.length === 0) {
+    showStatus(
+      'plan-builder-message',
+      result.existingPlanUsesRemainingTime
+        ? 'The tasks already planned use the available time, or the remaining ready tasks do not fit. Your current plan was left unchanged.'
+        : 'No ready tasks are left to add. Wake or make a task ready when your plans change.',
+    );
+    return;
+  }
+
+  todayPlan.taskIds.push(...result.taskIds);
+  saveTodayPlan(todayPlan, tasks);
+  render();
+
+  const fallback = result.usedTimeFallback
+    ? ' No estimate fit that time, so it added one shortest ready option instead.'
+    : '';
+  const energyFallback = result.usedEnergyFallback
+    ? ' No task matched your energy, so it used ready tasks from the rest of the queue.'
+    : '';
+  showStatus(
+    'plan-builder-message',
+    result.taskIds.length +
+      ' task' +
+      (result.taskIds.length === 1 ? '' : 's') +
+      ' added to today’s plan (' +
+      result.totalEstimatedMinutes +
+      ' estimated minutes).' +
+      fallback +
+      energyFallback,
+  );
+}
+
+function resumeSavedHandoff(taskId) {
+  const task = tasks.find((candidate) => candidate.id === taskId);
+  if (!task || !getResumableTasks(tasks).some((candidate) => candidate.id === taskId)) {
+    return;
+  }
+
+  if (focusTimer !== null) {
+    showNextStatus('Pause or end the current focus session before switching tasks.');
+    return;
+  }
+
+  focusTaskId = task.id;
+  focusSeconds = getDefaultFocusSeconds();
+  renderTimer();
+  setFocusStatus('Focus is ready for ' + task.text + '. Your saved next step is still visible below.');
+  el('start-focus').focus();
+}
+
+function renderResumePanel() {
+  const resumeTasks = getResumableTasks(tasks);
+  const container = el('resume-list');
+  container.replaceChildren();
+  el('resume-count').textContent = resumeTasks.length
+    ? resumeTasks.length + ' saved handoff' + (resumeTasks.length === 1 ? '' : 's')
+    : '';
+  el('resume-empty').hidden = resumeTasks.length > 0;
+
+  resumeTasks.forEach((task) => {
+    const item = document.createElement('article');
+    const title = document.createElement('h3');
+    const handoff = document.createElement('p');
+    const action = createTaskButton('Set up focus', 'resume-task', 'Set up a focus session for ' + task.text);
+
+    item.className = 'resume-item';
+    title.textContent = task.text;
+    handoff.textContent = 'Next tiny step: ' + task.handoff;
+    action.addEventListener('click', () => resumeSavedHandoff(task.id));
+    item.append(title, handoff, action);
     container.append(item);
   });
 }
@@ -1412,16 +1313,20 @@ function renderHistory() {
     const label = document.createElement('span');
     const meta = document.createElement('span');
     item.className = 'history-item';
-    const prefix = entry.type === 'completed'
-      ? 'Completed: '
-      : entry.type === 'focus-started'
-        ? 'Focus started: '
-        : entry.type === 'focus-finished'
-          ? 'Focus finished: '
-          : 'Handoff saved: ';
+    const prefix =
+      entry.type === 'completed'
+        ? 'Completed: '
+        : entry.type === 'focus-started'
+          ? 'Focus started: '
+          : entry.type === 'focus-finished'
+            ? 'Focus finished: '
+            : 'Handoff saved: ';
     label.textContent = prefix + entry.text;
     meta.className = 'history-meta';
-    meta.textContent = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.createdAt));
+    meta.textContent = new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(entry.createdAt));
     item.append(label, meta);
     list.append(item);
   });
@@ -1436,7 +1341,7 @@ function handleRoutineSubmit(event) {
     return;
   }
   routines.push({ id: crypto.randomUUID(), name, steps: [firstStep], createdAt: Date.now() });
-  saveRoutines();
+  saveRoutines(routines);
   el('routine-name-input').value = '';
   el('routine-step-input').value = '';
   renderRoutines();
@@ -1457,7 +1362,7 @@ function addRoutineStep(event, routineId) {
     return;
   }
   routine.steps.push(step);
-  saveRoutines();
+  saveRoutines(routines);
   renderRoutines();
   showStatus('routine-message', 'Step added to ' + routine.name + '.');
 }
@@ -1468,31 +1373,46 @@ function startRoutine(routineId) {
     return;
   }
   const created = routine.steps
-    .map((step) => createTask({ text: routine.name + ' — ' + step, energy: 'medium', estimatedMinutes: null, firstStep: step, dueDate: null }))
+    .map((step) =>
+      createTask({
+        text: routine.name + ' — ' + step,
+        energy: 'medium',
+        estimatedMinutes: null,
+        firstStep: step,
+        dueDate: null,
+      }),
+    )
     .filter((task) => !hasDuplicateActiveTitle(task.text));
   if (created.length === 0) {
     showStatus('routine-message', 'Those routine steps are already active in your queue.');
     return;
   }
   tasks.push(...created);
-  saveTasks();
+  saveTasks(tasks);
   resetSuggestionChoice();
   render();
-  showStatus('routine-message', created.length + ' routine step' + (created.length === 1 ? '' : 's') + ' added to your queue.');
+  showStatus(
+    'routine-message',
+    created.length + ' routine step' + (created.length === 1 ? '' : 's') + ' added to your queue.',
+  );
 }
 
 function deleteRoutine(routineId) {
   const routine = routines.find((candidate) => candidate.id === routineId);
   routines = routines.filter((candidate) => candidate.id !== routineId);
-  saveRoutines();
+  saveRoutines(routines);
   renderRoutines();
-  showStatus('routine-message', routine ? 'Deleted ' + routine.name + '. It did not change your tasks.' : 'Routine deleted.');
+  showStatus(
+    'routine-message',
+    routine ? 'Deleted ' + routine.name + '. It did not change your tasks.' : 'Routine deleted.',
+  );
 }
 
 function render() {
   renderPersonalSettings();
   renderSuggestion();
   renderTodayPlan();
+  renderResumePanel();
   renderWaitingRoom();
   renderTaskList();
   renderTimer();
@@ -1521,7 +1441,7 @@ function saveSettingsFromForm() {
     personalNote: el('personal-note-input').value,
     focusMinutes: el('focus-duration-input').value,
   });
-  savePersonalSettings();
+  savePersonalSettings(personalSettings);
 
   if (focusTimer === null && focusSeconds === previousDefaultFocusSeconds) {
     focusSeconds = getDefaultFocusSeconds();
@@ -1535,19 +1455,44 @@ function renderWaitingRoom() {
   const suggestion = getSuggestedTask();
   el('park-waiting').disabled = !suggestion;
   el('waiting-on-input').disabled = !suggestion;
+  el('waiting-review-input').disabled = !suggestion;
 
   if (!suggestion) {
     el('waiting-on-input').value = '';
+    el('waiting-review-input').value = '';
     el('waiting-on-input').placeholder = 'Choose a ready task before moving one to waiting';
-    return;
+  } else {
+    el('waiting-on-input').placeholder = "e.g. Teacher's notes before I can revise";
   }
 
-  el('waiting-on-input').placeholder = "e.g. Teacher's notes before I can revise";
+  const followUps = getWaitingFollowUps(tasks, { today: getLocalDatePart() });
+  const followUpPanel = el('waiting-follow-ups');
+  const followUpActions = el('waiting-follow-up-actions');
+  followUpActions.replaceChildren();
+  followUpPanel.hidden = followUps.length === 0;
+
+  if (followUps.length > 0) {
+    el('waiting-follow-up-label').textContent =
+      followUps.length === 1
+        ? 'One blocked task is ready to revisit. It stays Waiting until you choose Make ready.'
+        : followUps.length +
+          ' blocked tasks are ready to revisit. They stay Waiting until you choose Make ready.';
+    followUps.forEach((task) => {
+      const button = createTaskButton(
+        'Make “' + task.text + '” ready',
+        'waiting-follow-up-button',
+        'Make ' + task.text + ' ready',
+      );
+      button.addEventListener('click', () => makeTaskReady(task.id));
+      followUpActions.append(button);
+    });
+  }
 }
 
 function parkSuggestedTask() {
   const task = getSuggestedTask();
   const waitingOn = normalizeWhitespace(el('waiting-on-input').value).slice(0, maxWaitingOnLength);
+  const waitingUntil = getWaitingReviewDate(el('waiting-review-input').value);
 
   if (!task) {
     showStatus('waiting-message', 'Choose a ready task first.');
@@ -1561,14 +1506,20 @@ function parkSuggestedTask() {
   }
 
   task.waitingOn = waitingOn;
+  task.waitingUntil = waitingUntil;
   resetSuggestionChoice();
   if (task.id === sessionReviewTaskId) {
     sessionReviewTaskId = null;
   }
-  saveTasks();
+  saveTasks(tasks);
   el('waiting-on-input').value = '';
+  el('waiting-review-input').value = '';
   render();
-  showNextStatus('Moved to waiting so it will not compete for your attention right now.');
+  showNextStatus(
+    waitingUntil
+      ? 'Moved to waiting. It will stay out of your decision queue and show a local follow-up when its revisit date arrives.'
+      : 'Moved to waiting so it will not compete for your attention right now.',
+  );
 }
 
 function makeTaskReady(taskId) {
@@ -1578,7 +1529,8 @@ function makeTaskReady(taskId) {
   }
 
   task.waitingOn = null;
-  saveTasks();
+  task.waitingUntil = null;
+  saveTasks(tasks);
   resetSuggestionChoice();
   render();
   showNextStatus('Back in your ready queue.');
@@ -1620,9 +1572,9 @@ function saveSessionHandoff() {
 
   task.handoff = handoff;
   task.handoffAt = Date.now();
-  recordHistory('handoff', task.text + ' — ' + handoff);
+  historyItems = appendHistory(historyItems, 'handoff', task.text + ' — ' + handoff);
   sessionReviewTaskId = null;
-  saveTasks();
+  saveTasks(tasks);
   render();
   showNextStatus('Handoff saved. Your next tiny step will be here when you return.');
 }
@@ -1679,7 +1631,7 @@ function handleTaskSubmit(event) {
 
   tasks.push(task);
   resetSuggestionChoice();
-  saveTasks();
+  saveTasks(tasks);
   titleInput.value = '';
   clearCaptureContext();
   showFormStatus('Added. Start here is ready.');
@@ -1703,7 +1655,7 @@ function toggleTaskDone(taskId) {
     sessionReviewTaskId = null;
   }
 
-  saveTasks();
+  saveTasks(tasks);
   resetSuggestionChoice();
   render();
   showNextStatus(
@@ -1718,7 +1670,7 @@ function setTaskDone(task, done) {
   task.completedAt = done ? Date.now() : null;
 
   if (done && !previousDone) {
-    recordHistory('completed', task.text);
+    historyItems = appendHistory(historyItems, 'completed', task.text);
     let recurrenceTaskId = null;
     lastUndo = {
       type: 'complete',
@@ -1770,14 +1722,14 @@ function markSuggestedTaskDone() {
     sessionReviewTaskId = null;
   }
 
-  saveTasks();
+  saveTasks(tasks);
   resetSuggestionChoice();
   render();
   showNextStatus('Marked done. It moved out of your active queue.');
 }
 
 function pickAnotherTask() {
-  const suggestion = getSuggestion();
+  const suggestion = getRecommendation();
   if (suggestion.candidates.length < 2) {
     showNextStatus('This is the only active task that matches right now.');
     return;
@@ -1817,8 +1769,8 @@ function deleteTask(taskId) {
     task: deletedTask,
     todayPlanIndex,
   };
-  saveTasks();
-  saveTodayPlan();
+  saveTasks(tasks);
+  saveTodayPlan(todayPlan, tasks);
   resetSuggestionChoice();
   render();
   showNextStatus('Task deleted. Undo stays available until you refresh or delete another task.');
@@ -1864,7 +1816,7 @@ function undoLastAction() {
     tasks.splice(restoreIndex, 0, restoredTask);
     const restoredToToday = restoreTaskToTodayPlan(restoredTask.id, lastUndo.todayPlanIndex);
     lastUndo = null;
-    saveTasks();
+    saveTasks(tasks);
     render();
     focusTaskCheckboxOrQueue(restoredTask.id);
     showNextStatus(
@@ -1888,7 +1840,7 @@ function undoLastAction() {
       ? restoreTaskToTodayPlan(task.id, lastUndo.todayPlanIndex)
       : false;
     lastUndo = null;
-    saveTasks();
+    saveTasks(tasks);
     resetSuggestionChoice();
     render();
     if (task) {
@@ -1906,7 +1858,7 @@ function undoLastAction() {
     tasks.splice(Math.min(index, tasks.length), 0, task);
   });
   lastUndo = null;
-  saveTasks();
+  saveTasks(tasks);
   render();
   showNextStatus('Completed tasks restored.');
 }
@@ -1924,29 +1876,11 @@ function clearCompletedTasks() {
   todayPlan.taskIds = todayPlan.taskIds.filter((taskId) => tasks.some((task) => task.id === taskId));
   lastUndo = { type: 'clear-completed', items };
   editingTaskId = null;
-  saveTasks();
-  saveTodayPlan();
+  saveTasks(tasks);
+  saveTodayPlan(todayPlan, tasks);
   resetSuggestionChoice();
   render();
   showStatus('queue-message', 'Completed tasks cleared. Undo is available until another change or refresh.');
-}
-
-function getSnoozeTime(option) {
-  const date = new Date();
-  if (option === 'later') {
-    const laterToday = new Date(date);
-    laterToday.setHours(Math.min(date.getHours() + 3, 20), 0, 0, 0);
-    if (laterToday > date) {
-      return laterToday.getTime();
-    }
-    date.setDate(date.getDate() + 1);
-  } else if (option === 'next-week') {
-    date.setDate(date.getDate() + 7);
-  } else {
-    date.setDate(date.getDate() + 1);
-  }
-  date.setHours(8, 0, 0, 0);
-  return date.getTime();
 }
 
 function snoozeSuggestedTask(option) {
@@ -1965,7 +1899,7 @@ function snoozeSuggestedTask(option) {
     sessionReviewTaskId = null;
   }
 
-  saveTasks();
+  saveTasks(tasks);
   resetSuggestionChoice();
   render();
   showNextStatus('Snoozed until ' + formatSnoozeTime(task.snoozedUntil) + '. It stays in your list.');
@@ -1978,7 +1912,7 @@ function wakeTask(taskId) {
   }
 
   task.snoozedUntil = null;
-  saveTasks();
+  saveTasks(tasks);
   resetSuggestionChoice();
   render();
   showNextStatus('Back in your list.');
@@ -2023,9 +1957,10 @@ function renderTimer() {
   );
   el('reset-focus').disabled = focusTimer === null && focusSeconds === defaultFocusSeconds;
   el('end-focus').disabled = !focusTask && focusTimer === null;
-  document.title = focusTimer === null
-    ? defaultDocumentTitle
-    : formatFocusTime(focusSeconds) + ' — QueueClear';
+  document.title =
+    focusTimer === null
+      ? defaultDocumentTitle
+      : formatFocusTime(focusSeconds) + ' — QueueClear';
 }
 
 function tickFocus() {
@@ -2034,7 +1969,7 @@ function tickFocus() {
   if (focusSeconds <= 0) {
     const completedTask = getFocusTask();
     if (completedTask) {
-      recordHistory('focus-finished', completedTask.text);
+      historyItems = appendHistory(historyItems, 'focus-finished', completedTask.text);
     }
     clearInterval(focusTimer);
     focusTimer = null;
@@ -2070,7 +2005,7 @@ function startFocus() {
 
   focusTaskId = task.id;
   focusTimer = setInterval(tickFocus, 1000);
-  recordHistory('focus-started', task.text);
+  historyItems = appendHistory(historyItems, 'focus-started', task.text);
   renderTimer();
   setFocusStatus('Focus started for ' + task.text + '.');
 }
@@ -2102,7 +2037,7 @@ function stopFocus(message) {
 
 function setCurrentEnergy() {
   currentEnergy = el('current-energy-input').value;
-  saveCurrentEnergy();
+  saveCurrentEnergy(currentEnergy);
   resetSuggestionChoice();
   render();
   showNextStatus('Start here now matches your ' + currentEnergy + '-energy setting.');
@@ -2111,7 +2046,7 @@ function setCurrentEnergy() {
 function setTimeAvailable() {
   const selectedMinutes = Number(el('time-available-input').value);
   timeAvailable = timeAvailableOptions.includes(selectedMinutes) ? selectedMinutes : null;
-  saveTimeAvailable();
+  saveTimeAvailable(timeAvailable);
   resetSuggestionChoice();
   render();
   showNextStatus(
@@ -2153,7 +2088,7 @@ function applyTheme() {
 
 function toggleTheme() {
   const nextTheme = document.body.classList.contains('calm') ? 'paper' : 'calm';
-  localStorage.setItem(themeKey, nextTheme);
+  saveThemePreference(nextTheme);
   applyTheme();
 }
 
@@ -2181,6 +2116,7 @@ el('snooze-later').addEventListener('click', () => snoozeSuggestedTask('later'))
 el('snooze-tomorrow').addEventListener('click', () => snoozeSuggestedTask('tomorrow'));
 el('snooze-next-week').addEventListener('click', () => snoozeSuggestedTask('next-week'));
 el('complete-next').addEventListener('click', markSuggestedTaskDone);
+el('build-today-plan').addEventListener('click', buildTodayPlanFromReadyTasks);
 el('add-suggested-to-today').addEventListener('click', () => {
   const task = getSuggestedTask();
   if (task) {
